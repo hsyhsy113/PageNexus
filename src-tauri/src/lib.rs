@@ -27,6 +27,7 @@ const MINERU_MAX_FILE_BYTES: u64 = 200 * 1024 * 1024;
 const MINERU_TARGET_FILE_BYTES: u64 = 170 * 1024 * 1024;
 const MINERU_MAX_PAGES_PER_FILE: usize = 600;
 const MINERU_TARGET_PAGES_PER_FILE: usize = 240;
+const MINERU_UPLOAD_CONCURRENCY: usize = 4;
 
 #[derive(Clone)]
 struct AppState {
@@ -917,6 +918,15 @@ async fn submit_mineru_batch(
         return Err("MinerU 返回的上传链接数量与切块数量不一致。".to_string());
     }
 
+    #[derive(Clone)]
+    struct UploadJob {
+        file_name: String,
+        local_pdf_path: String,
+        upload_url: String,
+    }
+
+    let mut upload_jobs = Vec::<UploadJob>::new();
+
     for (chunk, upload_url) in chunks.iter().zip(envelope.data.file_urls.iter()) {
         emit_parser_log(
             app,
@@ -927,6 +937,12 @@ async fn submit_mineru_batch(
                 chunk.file_name, chunk.page_start, chunk.page_end
             ),
         );
+        upload_jobs.push(UploadJob {
+            file_name: chunk.file_name.clone(),
+            local_pdf_path: chunk.local_pdf_path.clone(),
+            upload_url: upload_url.clone(),
+        });
+        continue;
         let bytes = fs::read(&chunk.local_pdf_path).map_err(|error| error.to_string())?;
         let response = client
             .put(upload_url)
@@ -936,6 +952,36 @@ async fn submit_mineru_batch(
             .map_err(|error| error.to_string())?;
         if !response.status().is_success() {
             return Err(format!("MinerU 文件上传失败：{} -> {}", chunk.file_name, response.status()));
+        }
+    }
+
+    for job_group in upload_jobs.chunks(MINERU_UPLOAD_CONCURRENCY) {
+        let mut join_set = tokio::task::JoinSet::new();
+
+        for job in job_group {
+            let client = client.clone();
+            let job = job.clone();
+
+            join_set.spawn(async move {
+                let bytes = fs::read(&job.local_pdf_path).map_err(|error| error.to_string())?;
+                let response = client
+                    .put(&job.upload_url)
+                    .body(bytes)
+                    .send()
+                    .await
+                    .map_err(|error| error.to_string())?;
+                if !response.status().is_success() {
+                    return Err(format!("MinerU file upload failed: {} -> {}", job.file_name, response.status()));
+                }
+                Ok::<(), String>(())
+            });
+        }
+
+        while let Some(result) = join_set.join_next().await {
+            match result {
+                Ok(inner) => inner?,
+                Err(error) => return Err(format!("MinerU upload task join error: {error}")),
+            }
         }
     }
 
