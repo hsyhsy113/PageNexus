@@ -83,7 +83,7 @@ function normalizeSchema(schema) {
 const model = {
   id: modelId,
   name: modelId,
-  api: "openai-completions",
+  api: "openai-responses",
   provider: "packyapi",
   baseUrl,
   reasoning: true,
