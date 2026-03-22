@@ -750,16 +750,18 @@ fn count_pdf_pages(source: &Path) -> Result<usize, String> {
     Ok(document.get_pages().len())
 }
 
-fn save_pdf_page_range(source: &Path, start_page: usize, end_page: usize, target: &Path) -> Result<u64, String> {
-    let document = LoPdfDocument::load(source).map_err(|error| error.to_string())?;
-    let all_pages = document
-        .get_pages()
-        .into_keys()
-        .collect::<Vec<_>>();
+fn save_pdf_page_range(
+    document: &LoPdfDocument,
+    all_pages: &[u32],
+    start_page: usize,
+    end_page: usize,
+    target: &Path,
+) -> Result<u64, String> {
     let keep = (start_page as u32..=end_page as u32).collect::<HashSet<_>>();
     let mut chunk = document.clone();
     let delete_pages = all_pages
-        .into_iter()
+        .iter()
+        .copied()
         .filter(|page_number| !keep.contains(page_number))
         .collect::<Vec<_>>();
 
@@ -785,7 +787,8 @@ fn file_stem_for_chunks(file_name: &str) -> String {
 }
 
 fn push_pdf_chunk(
-    source: &Path,
+    document: &LoPdfDocument,
+    all_pages: &[u32],
     output_dir: &Path,
     file_stem: &str,
     doc_id: &str,
@@ -798,13 +801,33 @@ fn push_pdf_chunk(
     let chunk_id = format!("part-{:03}-p{}-{}", *index, start_page, end_page);
     let file_name = format!("{file_stem}-{chunk_id}.pdf");
     let path = output_dir.join(&file_name);
-    let size = save_pdf_page_range(source, start_page, end_page, &path)?;
+    let size = save_pdf_page_range(document, all_pages, start_page, end_page, &path)?;
 
     if size > MINERU_MAX_FILE_BYTES && page_count > 1 {
         let _ = fs::remove_file(&path);
         let midpoint = start_page + (page_count / 2) - 1;
-        push_pdf_chunk(source, output_dir, file_stem, doc_id, start_page, midpoint, index, chunks)?;
-        push_pdf_chunk(source, output_dir, file_stem, doc_id, midpoint + 1, end_page, index, chunks)?;
+        push_pdf_chunk(
+            document,
+            all_pages,
+            output_dir,
+            file_stem,
+            doc_id,
+            start_page,
+            midpoint,
+            index,
+            chunks,
+        )?;
+        push_pdf_chunk(
+            document,
+            all_pages,
+            output_dir,
+            file_stem,
+            doc_id,
+            midpoint + 1,
+            end_page,
+            index,
+            chunks,
+        )?;
         return Ok(());
     }
 
@@ -828,7 +851,9 @@ fn create_mineru_chunks(
     original_file_name: &str,
     doc_id: &str,
 ) -> Result<Vec<MineruChunkManifest>, String> {
-    let page_count = count_pdf_pages(source)?;
+    let document = LoPdfDocument::load(source).map_err(|error| error.to_string())?;
+    let all_pages = document.get_pages().into_keys().collect::<Vec<_>>();
+    let page_count = all_pages.len();
     if page_count == 0 {
         return Err("PDF 没有可解析页。".to_string());
     }
@@ -842,7 +867,17 @@ fn create_mineru_chunks(
 
     while start <= page_count {
         let end = (start + initial_chunk_pages - 1).min(page_count).min(start + MINERU_MAX_PAGES_PER_FILE - 1);
-        push_pdf_chunk(source, output_dir, &file_stem, doc_id, start, end, &mut index, &mut chunks)?;
+        push_pdf_chunk(
+            &document,
+            &all_pages,
+            output_dir,
+            &file_stem,
+            doc_id,
+            start,
+            end,
+            &mut index,
+            &mut chunks,
+        )?;
         start = end + 1;
     }
 
@@ -866,6 +901,7 @@ fn create_single_file_manifest(source: &Path, original_file_name: &str, doc_id: 
     }])
 }
 
+#[allow(unreachable_code)]
 async fn submit_mineru_batch(
     app: &AppHandle,
     kb_id: &str,
