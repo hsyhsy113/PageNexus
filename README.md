@@ -9,7 +9,7 @@ Users can:
 - ask questions against parsed materials
 - watch the agent use native file tools such as `ls`, `find`, `grep`, `read`, and `bash`
 
-The current parser is implemented with embedded Python and PyMuPDF. Runtime model settings are configured inside the app, not hardcoded in the repository.
+The parser now uses MinerU precise parsing orchestrated from Rust. Large PDFs are split adaptively, uploaded in chunks, then merged back into a single structured result. Runtime keys are configured inside the app, not hardcoded in the repository.
 
 ## Stack
 
@@ -17,8 +17,8 @@ The current parser is implemented with embedded Python and PyMuPDF. Runtime mode
 - React + Vite
 - Tailwind CSS
 - `@mariozechner/pi-coding-agent`
-- embedded Python runtime
-- PyMuPDF
+- MinerU precise parse API
+- adaptive PDF split/merge in Rust
 - SQLite
 
 ## Project Layout
@@ -27,13 +27,9 @@ The current parser is implemented with embedded Python and PyMuPDF. Runtime mode
 .
 ├── frontend/        React desktop UI
 ├── node/            Node wrapper for pi-coding-agent RPC mode
-├── python/          parser and utility scripts
 ├── src-tauri/       Rust backend and Tauri bundle config
-├── tests/           Python parser tests
 └── .github/         CI workflows
 ```
-
-`python-runtime/` is generated locally by the bootstrap script and is intentionally ignored from Git.
 
 ## Local Development
 
@@ -55,6 +51,7 @@ On first launch, open `Settings` and fill in:
 - `PackyAPI API Key`
 - `API Base URL`
 - `Model ID`
+- `MinerU API Token`
 
 Run all tests:
 
@@ -75,8 +72,9 @@ After launching the app, open `Settings` and configure:
 - `PackyAPI API Key`
 - `API Base URL`
 - `Model ID`
+- `MinerU API Token`
 
-Those values are stored in the app data directory as local settings and are used by both health checks and the coding agent runtime.
+Those values are stored in the app data directory as local settings. Packy settings are used by the coding agent runtime; the MinerU token is used for document parsing.
 
 ## Packaging
 

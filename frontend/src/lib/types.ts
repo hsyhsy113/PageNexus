@@ -80,6 +80,7 @@ export interface AppSettings {
   packy_api_key: string;
   packy_api_base_url: string;
   packy_model_id: string;
+  mineru_api_token: string;
 }
 
 export interface CodingAgentRuntimeState {

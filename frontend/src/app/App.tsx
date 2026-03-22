@@ -1,6 +1,6 @@
 import { appDataDir } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { confirm, open } from "@tauri-apps/plugin-dialog";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -45,6 +45,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   packy_api_key: "",
   packy_api_base_url: "https://www.packyapi.com/v1",
   packy_model_id: "gpt-5.4-low",
+  mineru_api_token: "",
 };
 
 function createTimestampLabel() {
@@ -180,6 +181,24 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    let disposed = false;
+    let unlistenPromise: Promise<() => void> | undefined;
+
+    unlistenPromise = listen<{ kbId: string; docId: string; message: string }>("parser-log", (event) => {
+      if (event.payload?.kbId !== activeKbRef.current) {
+        return;
+      }
+      logDiagnostic(`Parser: ${event.payload.message}`);
+    });
+
+    return () => {
+      if (disposed) return;
+      disposed = true;
+      void unlistenPromise?.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     const bootAgent = async () => {
@@ -278,7 +297,12 @@ export function App() {
 
     const selected = await open({
       multiple: false,
-      filters: [{ name: "PDF", extensions: ["pdf"] }],
+      filters: [
+        {
+          name: "Documents",
+          extensions: ["pdf", "doc", "docx", "ppt", "pptx", "png", "jpg", "jpeg", "html"],
+        },
+      ],
     });
 
     if (!selected || Array.isArray(selected)) return;
@@ -304,7 +328,7 @@ export function App() {
     try {
       const document = await uploadPdf(activeKbId, selected);
       await refreshDocuments(activeKbId);
-      logDiagnostic(`文档处理完成：${document.file_name} (${document.status})`);
+      logDiagnostic(`MinerU 解析完成：${document.file_name} (${document.status})`);
     } catch (error) {
       setDocumentsByKb((previous) => ({
         ...previous,
@@ -317,7 +341,11 @@ export function App() {
   };
 
   const handleDeleteDocument = async (documentId: string) => {
-    if (!window.confirm("确认删除这份文档及其解析结果？")) return;
+    const confirmed = await confirm("确认删除这份文档及其解析结果？", {
+      title: "删除文档",
+      kind: "warning",
+    });
+    if (!confirmed) return;
     try {
       await deleteDocument(documentId);
       if (activeKbId) {
@@ -336,6 +364,7 @@ export function App() {
         packy_api_key: settings.packy_api_key.trim(),
         packy_api_base_url: settings.packy_api_base_url.trim() || DEFAULT_SETTINGS.packy_api_base_url,
         packy_model_id: settings.packy_model_id.trim() || DEFAULT_SETTINGS.packy_model_id,
+        mineru_api_token: settings.mineru_api_token.trim(),
       };
       await saveAppSettings(nextSettings);
       setSettings(nextSettings);
@@ -585,7 +614,7 @@ export function App() {
                         <BookOpenText className="mx-auto h-10 w-10 text-slate-300" />
                         <div className="mt-4 text-sm font-black text-slate-600">还没有文档</div>
                         <div className="mt-2 text-xs leading-6 text-slate-400">
-                          上传 PDF 后，Agent 会直接在解析目录里用 `grep`、`read`、`find` 做原生检索。
+                          上传文档后，PageNexus 会用 MinerU 精准解析，再把合并后的结构结果交给 Agent 做原生检索。
                         </div>
                       </div>
                     ) : null}
@@ -666,12 +695,21 @@ export function App() {
                         rows={4}
                         className="w-full rounded-2xl border border-emerald-100 bg-white/70 px-4 py-4 font-mono text-xs outline-none transition focus:border-emerald-300"
                       />
+                      <textarea
+                        value={settings.mineru_api_token}
+                        onChange={(event) =>
+                          setSettings((current) => ({ ...current, mineru_api_token: event.target.value }))
+                        }
+                        placeholder="MinerU API Token"
+                        rows={4}
+                        className="w-full rounded-2xl border border-emerald-100 bg-white/70 px-4 py-4 font-mono text-xs outline-none transition focus:border-emerald-300"
+                      />
                     </div>
                   </div>
                   <div>
                     <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Runtime</div>
                     <div className="mt-2 rounded-2xl bg-white/70 px-4 py-4 font-medium">
-                      PDF parser: embedded Python + PyMuPDF
+                      Parser: Rust + MinerU precise parse + adaptive PDF split/merge
                     </div>
                   </div>
                   <button

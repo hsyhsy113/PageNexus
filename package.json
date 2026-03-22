@@ -3,11 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "bootstrap:python": "python3 python/bootstrap_runtime.py",
-    "dev": "npm run bootstrap:python && tauri dev",
-    "build": "npm run bootstrap:python && tauri build",
+    "dev": "tauri dev",
+    "build": "tauri build",
     "tauri": "tauri",
-    "test": "npm run bootstrap:python && npm --prefix frontend test && cargo test --manifest-path src-tauri/Cargo.toml && ./python-runtime/bin/python3 -m unittest discover -s tests"
+    "test": "npm --prefix frontend test && cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.6.0"

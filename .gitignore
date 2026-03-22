@@ -5,6 +5,8 @@ src-tauri/target/
 src-tauri/gen/
 python-runtime/
 tmp-icon/
+tmp-mineru-results/
+tmp-mineru-split/
 dist/
 __pycache__/
 *.pyc

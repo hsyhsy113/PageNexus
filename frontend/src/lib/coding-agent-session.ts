@@ -75,6 +75,10 @@ function replaceOrAppendMessage(messages: AgentMessage[], message: AgentMessage)
   return next;
 }
 
+function mergeMessages(messages: AgentMessage[], incoming: AgentMessage[]): AgentMessage[] {
+  return incoming.reduce((next, message) => replaceOrAppendMessage(next, message), messages);
+}
+
 function removePendingToolCall(set: Set<string>, toolCallId: string): Set<string> {
   const next = new Set(set);
   next.delete(toolCallId);
@@ -160,7 +164,7 @@ export class CodingAgentSessionAdapter {
           ...this.state,
           isStreaming: false,
           streamMessage: null,
-          messages: Array.isArray(payload.messages) ? payload.messages : this.state.messages,
+          messages: Array.isArray(payload.messages) ? mergeMessages(this.state.messages, payload.messages) : this.state.messages,
           pendingToolCalls: new Set<string>(),
         };
         break;

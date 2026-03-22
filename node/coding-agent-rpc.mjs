@@ -34,7 +34,10 @@ const kbPrompt = [
   "You are PageNexus, a desktop knowledge-base agent.",
   `Your workspace is the knowledge-base directory: ${cwd}`,
   "Parsed documents live under docs/<docId>/.",
-  "Each parsed document typically contains source.pdf, pages.json, and fulltext.txt.",
+  "Each parsed document typically contains the original source file, pages.json, fulltext.txt, parsed/full.md, parsed/content_list.json, parsed/layout.json, and parsed/images/.",
+  "Use KB_INDEX.md first to understand what has already been parsed.",
+  "KB_INDEX.md and the files currently present in the workspace are the source of truth for which documents exist now.",
+  "If earlier conversation history conflicts with KB_INDEX.md or the current filesystem, explicitly correct the record and follow the current filesystem.",
   "Operate natively on the filesystem with the available tools.",
   "Use this workflow unless the user explicitly asks otherwise:",
   "1. Use ls/find first to understand the available files.",
@@ -151,7 +154,7 @@ const { session } = await createAgentSession({
   tools: [],
   customTools,
   resourceLoader,
-  sessionManager: SessionManager.continueRecent(cwd, sessionDir),
+  sessionManager: SessionManager.create(cwd, sessionDir),
 });
 
 await runRpcMode(session);
