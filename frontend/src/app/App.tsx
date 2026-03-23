@@ -50,6 +50,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   packy_model_id: "gpt-5.4-low",
   mineru_api_token: "",
   storage_dir: "",
+  python_runtime_path: "",
 };
 
 function createTimestampLabel() {
@@ -370,6 +371,7 @@ export function App() {
         packy_model_id: settings.packy_model_id.trim() || DEFAULT_SETTINGS.packy_model_id,
         mineru_api_token: settings.mineru_api_token.trim(),
         storage_dir: settings.storage_dir.trim(),
+        python_runtime_path: settings.python_runtime_path.trim(),
       };
       const previousStoragePath = storagePath;
       await saveAppSettings(nextSettings);
@@ -805,12 +807,20 @@ export function App() {
                         rows={4}
                         className="w-full rounded-2xl border border-emerald-100 bg-white/70 px-4 py-4 font-mono text-xs outline-none transition focus:border-emerald-300"
                       />
+                      <input
+                        value={settings.python_runtime_path}
+                        onChange={(event) =>
+                          setSettings((current) => ({ ...current, python_runtime_path: event.target.value }))
+                        }
+                        placeholder="Python Runtime Path (optional)"
+                        className="w-full rounded-2xl border border-emerald-100 bg-white/70 px-4 py-4 font-medium outline-none transition focus:border-emerald-300"
+                      />
                     </div>
                   </div>
                   <div>
                     <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Runtime</div>
                     <div className="mt-2 rounded-2xl bg-white/70 px-4 py-4 font-medium">
-                      Parser: Rust + MinerU precise parse + adaptive PDF split/merge
+                      Parser: Python splitter + MinerU precise parse + shared Python runtime for agent/tools
                     </div>
                   </div>
                   <button

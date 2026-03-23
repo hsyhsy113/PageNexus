@@ -82,6 +82,7 @@ export interface AppSettings {
   packy_model_id: string;
   mineru_api_token: string;
   storage_dir: string;
+  python_runtime_path: string;
 }
 
 export interface CodingAgentRuntimeState {

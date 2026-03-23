@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
+    "prepare:python:mac": "./scripts/prepare-python-runtime.sh",
+    "prepare:python:win": "powershell -ExecutionPolicy Bypass -File ./scripts/prepare-python-runtime.ps1",
     "tauri": "tauri",
     "test": "npm --prefix frontend test && cargo test --manifest-path src-tauri/Cargo.toml"
   },

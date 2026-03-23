@@ -4,6 +4,7 @@ frontend/dist/
 src-tauri/target/
 src-tauri/gen/
 python-runtime/
+python/venv/
 tmp-icon/
 tmp-mineru-results/
 tmp-mineru-split/

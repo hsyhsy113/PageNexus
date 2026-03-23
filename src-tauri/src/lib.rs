@@ -45,6 +45,7 @@ struct AppSettings {
     packy_model_id: String,
     mineru_api_token: String,
     storage_dir: String,
+    python_runtime_path: String,
 }
 
 impl Default for AppSettings {
@@ -55,6 +56,7 @@ impl Default for AppSettings {
             packy_model_id: PACKY_MODEL_ID.to_string(),
             mineru_api_token: String::new(),
             storage_dir: String::new(),
+            python_runtime_path: String::new(),
         }
     }
 }
@@ -218,6 +220,23 @@ struct MineruChunkManifest {
 struct MineruBatchManifest {
     batch_id: String,
     chunks: Vec<MineruChunkManifest>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PythonSplitChunk {
+    chunk_id: String,
+    file_name: String,
+    page_start: usize,
+    page_end: usize,
+    page_count: usize,
+    local_pdf_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PythonSplitResult {
+    chunks: Vec<PythonSplitChunk>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -399,11 +418,82 @@ fn validate_storage_dir(storage_dir: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_python_runtime_path(python_runtime_path: &str) -> Result<(), String> {
+    let trimmed = python_runtime_path.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    let path = PathBuf::from(trimmed);
+    if !path.exists() {
+        return Err(format!("Python 路径不存在: {}", trimmed));
+    }
+    if !path.is_file() {
+        return Err(format!("Python 路径不是可执行文件: {}", trimmed));
+    }
+    Ok(())
+}
+
 fn node_binary_path() -> PathBuf {
     if let Ok(explicit) = std::env::var("PAGENEXUS_NODE_BIN") {
         return PathBuf::from(explicit);
     }
     PathBuf::from("node")
+}
+
+fn bundled_python_bin_path(app: &AppHandle) -> Option<PathBuf> {
+    let candidates = if cfg!(target_os = "windows") {
+        vec!["python/python.exe", "python/venv/Scripts/python.exe"]
+    } else {
+        vec!["python/bin/python3", "python/venv/bin/python3", "python/bin/python"]
+    };
+
+    for relative in candidates {
+        if let Some(path) = app.path().resolve(relative, BaseDirectory::Resource).ok() {
+            if path.exists() {
+                return Some(path);
+            }
+        }
+    }
+
+    None
+}
+
+fn resolve_python_binary_path(app: &AppHandle, state: &AppState) -> Result<PathBuf, String> {
+    let settings = load_app_settings(state)?;
+    let explicit = settings.python_runtime_path.trim();
+    if !explicit.is_empty() {
+        let path = PathBuf::from(explicit);
+        if path.exists() {
+            return Ok(path);
+        }
+        return Err(format!("Python 路径不存在: {}", explicit));
+    }
+
+    if let Ok(env_path) = std::env::var("PAGENEXUS_PYTHON_BIN") {
+        let path = PathBuf::from(env_path.trim());
+        if path.exists() {
+            return Ok(path);
+        }
+    }
+
+    if let Some(path) = bundled_python_bin_path(app) {
+        return Ok(path);
+    }
+
+    Ok(PathBuf::from("python3"))
+}
+
+fn python_splitter_script_path(app: &AppHandle) -> PathBuf {
+    let local = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../python/pdf_splitter.py");
+    if local.exists() {
+        return local;
+    }
+
+    app.path()
+        .resolve("python/pdf_splitter.py", BaseDirectory::Resource)
+        .ok()
+        .filter(|path| path.exists())
+        .unwrap_or(local)
 }
 
 fn coding_agent_script_path(app: &AppHandle) -> PathBuf {
@@ -495,6 +585,7 @@ fn spawn_coding_agent(app: &AppHandle, state: &AppState, kb_id: &str) -> Result<
     let script = coding_agent_script_path(app);
     let node = node_binary_path();
     let settings = load_app_settings(state)?;
+    let python_bin = resolve_python_binary_path(app, state)?;
     let api_key = settings.packy_api_key.trim();
     if api_key.is_empty() {
         return Err("未配置 PackyAPI API Key，请先到设置页保存。".to_string());
@@ -508,6 +599,7 @@ fn spawn_coding_agent(app: &AppHandle, state: &AppState, kb_id: &str) -> Result<
         .env("PACKY_API_KEY", api_key)
         .env("PACKY_API_BASE_URL", &settings.packy_api_base_url)
         .env("PACKY_MODEL_ID", &settings.packy_model_id)
+        .env("PAGENEXUS_PYTHON_BIN", python_bin)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -816,65 +908,6 @@ fn file_stem_for_chunks(file_name: &str) -> String {
         .replace(' ', "-")
 }
 
-fn push_pdf_chunk(
-    document: &LoPdfDocument,
-    all_pages: &[u32],
-    output_dir: &Path,
-    file_stem: &str,
-    doc_id: &str,
-    start_page: usize,
-    end_page: usize,
-    index: &mut usize,
-    chunks: &mut Vec<MineruChunkManifest>,
-) -> Result<(), String> {
-    let page_count = end_page.saturating_sub(start_page) + 1;
-    let chunk_id = format!("part-{:03}-p{}-{}", *index, start_page, end_page);
-    let file_name = format!("{file_stem}-{chunk_id}.pdf");
-    let path = output_dir.join(&file_name);
-    let size = save_pdf_page_range(document, all_pages, start_page, end_page, &path)?;
-
-    if size > MINERU_MAX_FILE_BYTES && page_count > 1 {
-        let _ = fs::remove_file(&path);
-        let midpoint = start_page + (page_count / 2) - 1;
-        push_pdf_chunk(
-            document,
-            all_pages,
-            output_dir,
-            file_stem,
-            doc_id,
-            start_page,
-            midpoint,
-            index,
-            chunks,
-        )?;
-        push_pdf_chunk(
-            document,
-            all_pages,
-            output_dir,
-            file_stem,
-            doc_id,
-            midpoint + 1,
-            end_page,
-            index,
-            chunks,
-        )?;
-        return Ok(());
-    }
-
-    let manifest = MineruChunkManifest {
-        chunk_id: chunk_id.clone(),
-        file_name,
-        page_start: start_page,
-        page_end: end_page,
-        page_count,
-        data_id: format!("{doc_id}-{chunk_id}"),
-        local_pdf_path: path.to_string_lossy().to_string(),
-    };
-    chunks.push(manifest);
-    *index += 1;
-    Ok(())
-}
-
 fn optimize_single_page_chunk(path: &Path) -> Result<u64, String> {
     let mut document = LoPdfDocument::load(path).map_err(|error| error.to_string())?;
     document.prune_objects();
@@ -985,6 +1018,83 @@ fn create_mineru_chunks(
     }
 
     chunks.sort_by_key(|item| item.page_start);
+    Ok(chunks)
+}
+
+fn create_mineru_chunks_with_python(
+    app: &AppHandle,
+    state: &AppState,
+    source: &Path,
+    output_dir: &Path,
+    original_file_name: &str,
+    doc_id: &str,
+) -> Result<Vec<MineruChunkManifest>, String> {
+    let file_size = fs::metadata(source).map_err(|error| error.to_string())?.len();
+    let page_count = count_pdf_pages(source)?;
+    let target_pages = compute_initial_pdf_chunk_pages(page_count, file_size);
+    let file_stem = file_stem_for_chunks(original_file_name);
+    let python_bin = resolve_python_binary_path(app, state)?;
+    let splitter_script = python_splitter_script_path(app);
+
+    if !splitter_script.exists() {
+        return Err(format!(
+            "Python 分片脚本不存在: {}",
+            splitter_script.to_string_lossy()
+        ));
+    }
+
+    let output = Command::new(&python_bin)
+        .arg(&splitter_script)
+        .arg("--source")
+        .arg(source)
+        .arg("--output-dir")
+        .arg(output_dir)
+        .arg("--file-stem")
+        .arg(&file_stem)
+        .arg("--target-bytes")
+        .arg(MINERU_TARGET_FILE_BYTES.to_string())
+        .arg("--max-bytes")
+        .arg(MINERU_MAX_FILE_BYTES.to_string())
+        .arg("--max-pages")
+        .arg(MINERU_MAX_PAGES_PER_FILE.to_string())
+        .arg("--target-pages")
+        .arg(target_pages.to_string())
+        .output()
+        .map_err(|error| {
+            format!(
+                "启动 Python 分片失败 ({}): {}",
+                python_bin.to_string_lossy(),
+                error
+            )
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Python 分片失败: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8(output.stdout).map_err(|error| error.to_string())?;
+    let split_result =
+        serde_json::from_str::<PythonSplitResult>(&stdout).map_err(|error| error.to_string())?;
+
+    if split_result.chunks.is_empty() {
+        return Err("Python 分片返回空结果。".to_string());
+    }
+
+    let chunks = split_result
+        .chunks
+        .into_iter()
+        .map(|chunk| MineruChunkManifest {
+            chunk_id: chunk.chunk_id.clone(),
+            file_name: chunk.file_name,
+            page_start: chunk.page_start,
+            page_end: chunk.page_end,
+            page_count: chunk.page_count,
+            data_id: format!("{doc_id}-{}", chunk.chunk_id),
+            local_pdf_path: chunk.local_pdf_path,
+        })
+        .collect::<Vec<_>>();
+
     Ok(chunks)
 }
 
@@ -1561,6 +1671,7 @@ fn clear_chunk_cache(doc_dir: &Path) -> Result<(), String> {
 
 fn build_or_reuse_mineru_chunks(
     app: &AppHandle,
+    state: &AppState,
     kb_id: &str,
     doc_id: &str,
     source: &Path,
@@ -1596,7 +1707,21 @@ fn build_or_reuse_mineru_chunks(
             );
             create_single_file_manifest(source, original_file_name, doc_id)?
         } else {
-            create_mineru_chunks(source, &input_dir, original_file_name, doc_id)?
+            match create_mineru_chunks_with_python(app, state, source, &input_dir, original_file_name, doc_id) {
+                Ok(chunks) => {
+                    emit_parser_log(app, kb_id, doc_id, "已使用 Python splitter 完成 PDF 切块。");
+                    chunks
+                }
+                Err(error) => {
+                    emit_parser_log(
+                        app,
+                        kb_id,
+                        doc_id,
+                        format!("Python splitter 失败，回退 Rust 切块：{error}"),
+                    );
+                    create_mineru_chunks(source, &input_dir, original_file_name, doc_id)?
+                }
+            }
         }
     } else {
         create_single_file_manifest(source, original_file_name, doc_id)?
@@ -1614,6 +1739,7 @@ fn build_or_reuse_mineru_chunks(
 
 async fn parse_document_with_mineru(
     app: &AppHandle,
+    state: &AppState,
     kb_id: &str,
     doc_id: &str,
     original_file_name: &str,
@@ -1622,7 +1748,8 @@ async fn parse_document_with_mineru(
     mineru_token: &str,
     doc_dir: &Path,
 ) -> Result<ParsedDocumentFile, String> {
-    let chunks = build_or_reuse_mineru_chunks(app, kb_id, doc_id, source, original_file_name, extension, doc_dir)?;
+    let chunks =
+        build_or_reuse_mineru_chunks(app, state, kb_id, doc_id, source, original_file_name, extension, doc_dir)?;
 
     let batch_status = submit_mineru_batch(app, kb_id, doc_id, mineru_token, &chunks).await?;
     let batch_manifest = MineruBatchManifest {
@@ -1859,6 +1986,7 @@ async fn upload_pdf(
     let parse_result: Result<ParsedDocumentFile, String> = async {
         let chunks = build_or_reuse_mineru_chunks(
             &app,
+            &state,
             &kb_id,
             &doc_id,
             &stored_source,
@@ -1995,6 +2123,7 @@ async fn retry_document_parse(doc_id: String, app: AppHandle, state: State<'_, A
     fs::create_dir_all(&doc_dir).map_err(|error| error.to_string())?;
     let parse_result = parse_document_with_mineru(
         &app,
+        &state,
         &document.kb_id,
         &document.id,
         &document.file_name,
@@ -2326,6 +2455,7 @@ fn get_app_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
 #[tauri::command]
 fn save_app_settings(settings: AppSettings, state: State<'_, AppState>) -> Result<(), String> {
     validate_storage_dir(&settings.storage_dir)?;
+    validate_python_runtime_path(&settings.python_runtime_path)?;
     save_app_settings_file(&state, &settings)
 }
 

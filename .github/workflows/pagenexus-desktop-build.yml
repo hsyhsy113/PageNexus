@@ -37,6 +37,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Install app dependencies
         working-directory: .
         run: npm ci
@@ -44,6 +49,15 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+
+      - name: Prepare Python runtime (macOS/Linux)
+        if: runner.os != 'Windows'
+        run: ./scripts/prepare-python-runtime.sh
+
+      - name: Prepare Python runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/prepare-python-runtime.ps1
 
       - name: Build desktop app
         uses: tauri-apps/tauri-action@v0.6.1

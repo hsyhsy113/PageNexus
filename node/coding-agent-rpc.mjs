@@ -21,6 +21,7 @@ const agentDir = path.join(appHome, "agent-home");
 const apiKey = process.env.PACKY_API_KEY;
 const baseUrl = process.env.PACKY_API_BASE_URL ?? "https://www.packyapi.com/v1";
 const modelId = process.env.PACKY_MODEL_ID ?? "gpt-5.4-low";
+const pythonBin = process.env.PAGENEXUS_PYTHON_BIN ?? "";
 
 if (!apiKey) {
   console.error("PACKY_API_KEY is required.");
@@ -39,6 +40,11 @@ const kbPrompt = [
   "KB_INDEX.md and the files currently present in the workspace are the source of truth for which documents exist now.",
   "If earlier conversation history conflicts with KB_INDEX.md or the current filesystem, explicitly correct the record and follow the current filesystem.",
   "Operate natively on the filesystem with the available tools.",
+  pythonBin
+    ? `Python runtime is configured at: ${pythonBin}`
+    : "Python runtime path is not explicitly configured; try python3/python if needed.",
+  "When Python is configured, do not claim uncertainty; use that exact executable path directly.",
+  "Before first Python task, verify by running: <python_bin> --version.",
   "Use this workflow unless the user explicitly asks otherwise:",
   "1. Use ls/find first to understand the available files.",
   "2. Use grep or bash with rg to narrow down relevant pages or passages.",
@@ -83,7 +89,7 @@ function normalizeSchema(schema) {
 const model = {
   id: modelId,
   name: modelId,
-  api: "openai-responses",
+  api: "openai-completions",
   provider: "packyapi",
   baseUrl,
   reasoning: true,
@@ -154,7 +160,7 @@ const { session } = await createAgentSession({
   tools: [],
   customTools,
   resourceLoader,
-  sessionManager: SessionManager.create(cwd, sessionDir),
+  sessionManager: SessionManager.continueRecent(cwd, sessionDir),
 });
 
 await runRpcMode(session);
