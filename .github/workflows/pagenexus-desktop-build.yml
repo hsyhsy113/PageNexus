@@ -8,6 +8,8 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +50,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: ${{ github.ref_type == 'tag' && format('PageNexus {0}', github.ref_name) || '' }}
+          releaseBody: ${{ github.ref_type == 'tag' && 'See the assets below to download and install this version.' || '' }}
+          releaseDraft: false
+          prerelease: false
           args: ${{ matrix.args }}
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: "[name]-[platform]-[arch]-[bundle]"

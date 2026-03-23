@@ -161,6 +161,7 @@ cargo tauri build --bundles nsis
 
 - macOS `.dmg`
 - Windows `nsis` 安装器
+- tag 构建成功后会把安装包上传到 GitHub Release assets
 
 普通 `git push` 到分支不会自动打包。
 
