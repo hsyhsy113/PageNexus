@@ -80,6 +80,12 @@ export interface AppSettings {
   packy_api_key: string;
   packy_api_base_url: string;
   packy_model_id: string;
+  semantic_search_enabled: boolean;
+  embedding_mode: string;
+  embedding_api_key: string;
+  embedding_api_base_url: string;
+  embedding_model_id: string;
+  embedding_local_model_id: string;
   mineru_api_token: string;
   storage_dir: string;
   python_runtime_path: string;

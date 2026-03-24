@@ -6,6 +6,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
     sync::{mpsc, Arc, Mutex},
+    thread,
     time::{Duration, Instant},
 };
 
@@ -36,6 +37,7 @@ struct AppState {
     db_path: PathBuf,
     agents: Arc<Mutex<HashMap<String, AgentProcess>>>,
     agent_session_tags: Arc<Mutex<HashMap<String, String>>>,
+    parse_cancel_requests: Arc<Mutex<HashSet<String>>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -44,6 +46,12 @@ struct AppSettings {
     packy_api_key: String,
     packy_api_base_url: String,
     packy_model_id: String,
+    semantic_search_enabled: bool,
+    embedding_mode: String,
+    embedding_api_key: String,
+    embedding_api_base_url: String,
+    embedding_model_id: String,
+    embedding_local_model_id: String,
     mineru_api_token: String,
     storage_dir: String,
     python_runtime_path: String,
@@ -55,6 +63,12 @@ impl Default for AppSettings {
             packy_api_key: String::new(),
             packy_api_base_url: PACKY_API_BASE_URL.to_string(),
             packy_model_id: PACKY_MODEL_ID.to_string(),
+            semantic_search_enabled: true,
+            embedding_mode: String::new(),
+            embedding_api_key: String::new(),
+            embedding_api_base_url: PACKY_API_BASE_URL.to_string(),
+            embedding_model_id: "text-embedding-3-small".to_string(),
+            embedding_local_model_id: "google/embeddinggemma-300m".to_string(),
             mineru_api_token: String::new(),
             storage_dir: String::new(),
             python_runtime_path: String::new(),
@@ -568,6 +582,57 @@ fn python_splitter_script_path(app: &AppHandle) -> PathBuf {
     local
 }
 
+fn request_parse_cancel(state: &AppState, doc_id: &str) {
+    if let Ok(mut requested) = state.parse_cancel_requests.lock() {
+        requested.insert(doc_id.to_string());
+    }
+}
+
+fn clear_parse_cancel(state: &AppState, doc_id: &str) {
+    if let Ok(mut requested) = state.parse_cancel_requests.lock() {
+        requested.remove(doc_id);
+    }
+}
+
+fn is_parse_cancel_requested(state: &AppState, doc_id: &str) -> bool {
+    state
+        .parse_cancel_requests
+        .lock()
+        .map(|requested| requested.contains(doc_id))
+        .unwrap_or(false)
+}
+
+fn ensure_parse_not_cancelled(
+    app: &AppHandle,
+    state: &AppState,
+    kb_id: &str,
+    doc_id: &str,
+    stage: &str,
+) -> Result<(), String> {
+    if is_parse_cancel_requested(state, doc_id) {
+        emit_parser_log(app, kb_id, doc_id, format!("解析取消已生效：{stage}"));
+        return Err("文档解析已取消。".to_string());
+    }
+    Ok(())
+}
+
+fn local_embedder_script_path(app: &AppHandle) -> PathBuf {
+    let local = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../python/local_embedder.py");
+    if local.exists() {
+        return local;
+    }
+
+    for candidate in ["python/local_embedder.py", "_up_/python/local_embedder.py"] {
+        if let Some(path) = app.path().resolve(candidate, BaseDirectory::Resource).ok() {
+            if path.exists() {
+                return path;
+            }
+        }
+    }
+
+    local
+}
+
 fn coding_agent_script_path(app: &AppHandle) -> PathBuf {
     let local = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../node/coding-agent-rpc.mjs");
     if local.exists() {
@@ -698,6 +763,7 @@ fn spawn_coding_agent(app: &AppHandle, state: &AppState, kb_id: &str) -> Result<
     let node = node_binary_path(app);
     let settings = load_app_settings(state)?;
     let python_bin = resolve_python_binary_path(app, state)?;
+    let local_embed_script = local_embedder_script_path(app);
     let api_key = settings.packy_api_key.trim();
     if api_key.is_empty() {
         return Err("未配置 PackyAPI API Key，请先到设置页保存。".to_string());
@@ -711,6 +777,29 @@ fn spawn_coding_agent(app: &AppHandle, state: &AppState, kb_id: &str) -> Result<
         .env("PACKY_API_KEY", api_key)
         .env("PACKY_API_BASE_URL", &settings.packy_api_base_url)
         .env("PACKY_MODEL_ID", &settings.packy_model_id)
+        .env(
+            "PAGENEXUS_ENABLE_SEMANTIC_SEARCH",
+            if settings.semantic_search_enabled {
+                "1"
+            } else {
+                "0"
+            },
+        )
+        .env("PAGENEXUS_FORCE_RETRIEVAL", "1")
+        .env(
+            "PAGENEXUS_FORCE_SEMANTIC_SEARCH",
+            if settings.semantic_search_enabled {
+                "1"
+            } else {
+                "0"
+            },
+        )
+        .env("PAGENEXUS_EMBEDDING_MODE", &settings.embedding_mode)
+        .env("PAGENEXUS_EMBEDDING_API_KEY", &settings.embedding_api_key)
+        .env("PAGENEXUS_EMBEDDING_API_BASE_URL", &settings.embedding_api_base_url)
+        .env("PAGENEXUS_EMBEDDING_MODEL", &settings.embedding_model_id)
+        .env("PAGENEXUS_EMBEDDING_LOCAL_MODEL", &settings.embedding_local_model_id)
+        .env("PAGENEXUS_LOCAL_EMBED_SCRIPT", local_embed_script)
         .env("PAGENEXUS_PYTHON_BIN", python_bin)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -813,6 +902,153 @@ fn spawn_coding_agent(app: &AppHandle, state: &AppState, kb_id: &str) -> Result<
         stdin,
         pending,
     })
+}
+
+enum SemanticIndexUpdateMode {
+    UpsertDoc(String),
+    RemoveDoc(String),
+}
+
+fn rebuild_semantic_index_for_kb(
+    app: &AppHandle,
+    state: &AppState,
+    kb_id: &str,
+    mode: SemanticIndexUpdateMode,
+) -> Result<(), String> {
+    let kb_dir = knowledge_base_dir(state, kb_id);
+    fs::create_dir_all(&kb_dir).map_err(|error| error.to_string())?;
+
+    let session_tag = current_agent_session_tag(state, kb_id);
+    let agent_home = coding_agent_home_dir(state, kb_id, &session_tag);
+    fs::create_dir_all(&agent_home).map_err(|error| error.to_string())?;
+
+    let script = coding_agent_script_path(app);
+    let node = node_binary_path(app);
+    let settings = load_app_settings(state)?;
+    if !settings.semantic_search_enabled {
+        emit_parser_log(
+            app,
+            kb_id,
+            "embedding-index",
+            "Embedding 索引重建已跳过：semantic search 已禁用",
+        );
+        return Ok(());
+    }
+    let python_bin = resolve_python_binary_path(app, state)?;
+    let local_embed_script = local_embedder_script_path(app);
+
+    let mut command = Command::new(node);
+    command
+        .arg(script)
+        .arg(&kb_dir)
+        .arg(&agent_home)
+        .arg("--build-semantic-index")
+        .current_dir(&kb_dir)
+        .env("PACKY_API_KEY", settings.packy_api_key.trim())
+        .env("PACKY_API_BASE_URL", &settings.packy_api_base_url)
+        .env("PACKY_MODEL_ID", &settings.packy_model_id)
+        .env("PAGENEXUS_ENABLE_SEMANTIC_SEARCH", "1")
+        .env("PAGENEXUS_FORCE_RETRIEVAL", "1")
+        .env("PAGENEXUS_FORCE_SEMANTIC_SEARCH", "1")
+        .env("PAGENEXUS_EMBEDDING_MODE", &settings.embedding_mode)
+        .env("PAGENEXUS_EMBEDDING_API_KEY", &settings.embedding_api_key)
+        .env("PAGENEXUS_EMBEDDING_API_BASE_URL", &settings.embedding_api_base_url)
+        .env("PAGENEXUS_EMBEDDING_MODEL", &settings.embedding_model_id)
+        .env("PAGENEXUS_EMBEDDING_LOCAL_MODEL", &settings.embedding_local_model_id)
+        .env("PAGENEXUS_LOCAL_EMBED_SCRIPT", local_embed_script)
+        .env("PAGENEXUS_PYTHON_BIN", python_bin)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    match mode {
+        SemanticIndexUpdateMode::UpsertDoc(doc_id) => {
+            command.arg("--doc-id").arg(doc_id);
+        }
+        SemanticIndexUpdateMode::RemoveDoc(doc_id) => {
+            command.arg("--remove-doc-id").arg(doc_id);
+        }
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("failed to launch semantic index builder: {error}"))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "semantic index builder stdout unavailable".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "semantic index builder stderr unavailable".to_string())?;
+
+    let stdout_lines = Arc::new(Mutex::new(Vec::<String>::new()));
+    let stderr_lines = Arc::new(Mutex::new(Vec::<String>::new()));
+
+    let app_for_stdout = app.clone();
+    let kb_for_stdout = kb_id.to_string();
+    let stdout_buffer = Arc::clone(&stdout_lines);
+    let stdout_handle = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines().map_while(Result::ok) {
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Ok(mut buffer) = stdout_buffer.lock() {
+                buffer.push(line.clone());
+            }
+            emit_parser_log(
+                &app_for_stdout,
+                &kb_for_stdout,
+                "embedding-index",
+                format!("Embedding重建: {line}"),
+            );
+        }
+    });
+
+    let app_for_stderr = app.clone();
+    let kb_for_stderr = kb_id.to_string();
+    let stderr_buffer = Arc::clone(&stderr_lines);
+    let stderr_handle = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines().map_while(Result::ok) {
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Ok(mut buffer) = stderr_buffer.lock() {
+                buffer.push(line.clone());
+            }
+            emit_parser_log(
+                &app_for_stderr,
+                &kb_for_stderr,
+                "embedding-index",
+                format!("Embedding重建: {line}"),
+            );
+        }
+    });
+
+    let status = child
+        .wait()
+        .map_err(|error| format!("failed to wait semantic index builder: {error}"))?;
+    let _ = stdout_handle.join();
+    let _ = stderr_handle.join();
+
+    if status.success() {
+        return Ok(());
+    }
+
+    let stderr = stderr_lines
+        .lock()
+        .map(|items| items.join("\n"))
+        .unwrap_or_else(|_| String::new());
+    let stdout = stdout_lines
+        .lock()
+        .map(|items| items.join("\n"))
+        .unwrap_or_else(|_| String::new());
+    Err(format!(
+        "semantic index build failed: status={} stderr={} stdout={}",
+        status,
+        stderr.trim(),
+        stdout.trim()
+    ))
 }
 
 fn get_or_start_agent<'a>(
@@ -986,12 +1222,16 @@ fn count_pdf_pages(source: &Path) -> Result<usize, String> {
 
 fn count_pdf_pages_with_python(app: &AppHandle, state: &AppState, source: &Path) -> Result<usize, String> {
     let python_bin = resolve_python_binary_path(app, state)?;
+<<<<<<< HEAD
     let probe = r#"import fitz
 import sys
 
 with fitz.open(sys.argv[1]) as doc:
     print(len(doc))
 "#;
+=======
+    let probe = r#"import fitz, sys; doc = fitz.open(sys.argv[1]); print(len(doc)); doc.close()"#;
+>>>>>>> 2acaeee (add embedding semantic search)
     let output = Command::new(&python_bin)
         .arg("-c")
         .arg(probe)
@@ -1273,6 +1513,7 @@ fn create_single_file_manifest(source: &Path, original_file_name: &str, doc_id: 
 #[allow(unreachable_code)]
 async fn submit_mineru_batch(
     app: &AppHandle,
+    state: &AppState,
     kb_id: &str,
     doc_id: &str,
     token: &str,
@@ -1333,6 +1574,7 @@ async fn submit_mineru_batch(
     let mut upload_jobs = Vec::<UploadJob>::new();
 
     for (chunk, upload_url) in chunks.iter().zip(envelope.data.file_urls.iter()) {
+        ensure_parse_not_cancelled(app, state, kb_id, doc_id, "准备上传切块前")?;
         emit_parser_log(
             app,
             kb_id,
@@ -1361,6 +1603,7 @@ async fn submit_mineru_batch(
     }
 
     for job_group in upload_jobs.chunks(MINERU_UPLOAD_CONCURRENCY) {
+        ensure_parse_not_cancelled(app, state, kb_id, doc_id, "并发上传切块中")?;
         let mut join_set = tokio::task::JoinSet::new();
 
         for job in job_group {
@@ -1392,6 +1635,7 @@ async fn submit_mineru_batch(
 
     let mut attempts = 0usize;
     loop {
+        ensure_parse_not_cancelled(app, state, kb_id, doc_id, "MinerU 轮询中")?;
         attempts += 1;
         let response = client
             .get(format!(
@@ -1922,10 +2166,12 @@ async fn parse_document_with_mineru(
     mineru_token: &str,
     doc_dir: &Path,
 ) -> Result<ParsedDocumentFile, String> {
+    ensure_parse_not_cancelled(app, state, kb_id, doc_id, "开始解析前")?;
     let chunks =
         build_or_reuse_mineru_chunks(app, state, kb_id, doc_id, source, original_file_name, extension, doc_dir)?;
 
-    let batch_status = submit_mineru_batch(app, kb_id, doc_id, mineru_token, &chunks).await?;
+    ensure_parse_not_cancelled(app, state, kb_id, doc_id, "切块完成后")?;
+    let batch_status = submit_mineru_batch(app, state, kb_id, doc_id, mineru_token, &chunks).await?;
     let batch_manifest = MineruBatchManifest {
         batch_id: batch_status.batch_id.clone(),
         chunks: chunks.clone(),
@@ -1936,6 +2182,7 @@ async fn parse_document_with_mineru(
     )
     .map_err(|error| error.to_string())?;
 
+    ensure_parse_not_cancelled(app, state, kb_id, doc_id, "合并结果前")?;
     let parsed = merge_mineru_results(
         app,
         kb_id,
@@ -2105,6 +2352,7 @@ async fn upload_pdf(
         .to_string();
 
     let doc_id = Uuid::new_v4().to_string();
+    clear_parse_cancel(&state, &doc_id);
     let created_at = now();
     let doc_dir = document_dir(&state, &kb_id, &doc_id);
     fs::create_dir_all(&doc_dir).map_err(|error| error.to_string())?;
@@ -2175,7 +2423,8 @@ async fn upload_pdf(
             format!("切块完成，共 {} 个输入文件。", chunks.len()),
         );
 
-        let batch_status = submit_mineru_batch(&app, &kb_id, &doc_id, &mineru_token, &chunks).await?;
+        ensure_parse_not_cancelled(&app, &state, &kb_id, &doc_id, "切块完成后")?;
+        let batch_status = submit_mineru_batch(&app, &state, &kb_id, &doc_id, &mineru_token, &chunks).await?;
         let batch_manifest = MineruBatchManifest {
             batch_id: batch_status.batch_id.clone(),
             chunks: chunks.clone(),
@@ -2186,6 +2435,7 @@ async fn upload_pdf(
         )
         .map_err(|error| error.to_string())?;
 
+        ensure_parse_not_cancelled(&app, &state, &kb_id, &doc_id, "合并结果前")?;
         merge_mineru_results(
             &app,
             &kb_id,
@@ -2200,6 +2450,7 @@ async fn upload_pdf(
     .await;
 
     if let Err(message) = parse_result {
+        clear_parse_cancel(&state, &doc_id);
         let connection = db_connection(&state.db_path)?;
         connection
             .execute(
@@ -2218,6 +2469,8 @@ async fn upload_pdf(
     }
 
     let parsed = parse_result?;
+    ensure_parse_not_cancelled(&app, &state, &kb_id, &doc_id, "写入解析结果前")?;
+    clear_parse_cancel(&state, &doc_id);
     if let Err(error) = clear_chunk_cache(&doc_dir) {
         emit_parser_log(
             &app,
@@ -2241,6 +2494,21 @@ async fn upload_pdf(
         )
         .map_err(|error| error.to_string())?;
     write_kb_catalog(&state, &kb_id)?;
+    emit_parser_log(&app, &kb_id, &doc_id, "开始重建知识库 embedding 索引。");
+    match rebuild_semantic_index_for_kb(
+        &app,
+        &state,
+        &kb_id,
+        SemanticIndexUpdateMode::UpsertDoc(doc_id.clone()),
+    ) {
+        Ok(_) => emit_parser_log(&app, &kb_id, &doc_id, "知识库 embedding 索引重建完成。"),
+        Err(error) => emit_parser_log(
+            &app,
+            &kb_id,
+            &doc_id,
+            format!("知识库 embedding 索引重建失败：{error}"),
+        ),
+    }
 
     connection
         .query_row(
@@ -2267,6 +2535,7 @@ async fn retry_document_parse(doc_id: String, app: AppHandle, state: State<'_, A
     if document.status == "parsing" {
         return Err("文档正在解析中，请稍后重试。".to_string());
     }
+    clear_parse_cancel(&state, &document.id);
 
     let extension = ensure_supported_document(&document.source_path)?;
     let source = PathBuf::from(&document.source_path);
@@ -2309,6 +2578,7 @@ async fn retry_document_parse(doc_id: String, app: AppHandle, state: State<'_, A
     .await;
 
     if let Err(message) = parse_result {
+        clear_parse_cancel(&state, &document.id);
         let connection = db_connection(&state.db_path)?;
         connection
             .execute(
@@ -2327,6 +2597,8 @@ async fn retry_document_parse(doc_id: String, app: AppHandle, state: State<'_, A
     }
 
     let parsed = parse_result?;
+    ensure_parse_not_cancelled(&app, &state, &document.kb_id, &document.id, "写入解析结果前")?;
+    clear_parse_cancel(&state, &document.id);
     let connection = db_connection(&state.db_path)?;
     connection
         .execute(
@@ -2341,6 +2613,72 @@ async fn retry_document_parse(doc_id: String, app: AppHandle, state: State<'_, A
         )
         .map_err(|error| error.to_string())?;
     write_kb_catalog(&state, &document.kb_id)?;
+    emit_parser_log(
+        &app,
+        &document.kb_id,
+        &document.id,
+        "开始重建知识库 embedding 索引。",
+    );
+    match rebuild_semantic_index_for_kb(
+        &app,
+        &state,
+        &document.kb_id,
+        SemanticIndexUpdateMode::UpsertDoc(document.id.clone()),
+    ) {
+        Ok(_) => emit_parser_log(
+            &app,
+            &document.kb_id,
+            &document.id,
+            "知识库 embedding 索引重建完成。",
+        ),
+        Err(error) => emit_parser_log(
+            &app,
+            &document.kb_id,
+            &document.id,
+            format!("知识库 embedding 索引重建失败：{error}"),
+        ),
+    }
+
+    connection
+        .query_row(
+            "SELECT id, kb_id, file_name, source_path, page_count, status, error_message, created_at, updated_at FROM documents WHERE id = ?1",
+            [doc_id],
+            row_to_document,
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn cancel_document_parse(doc_id: String, app: AppHandle, state: State<'_, AppState>) -> Result<DocumentRecord, String> {
+    let connection = db_connection(&state.db_path)?;
+    let document = connection
+        .query_row(
+            "SELECT id, kb_id, file_name, source_path, page_count, status, error_message, created_at, updated_at FROM documents WHERE id = ?1",
+            [doc_id.clone()],
+            row_to_document,
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "文档不存在。".to_string())?;
+
+    if document.status != "parsing" {
+        return Err("当前文档不在解析中，无法取消。".to_string());
+    }
+
+    request_parse_cancel(&state, &document.id);
+    emit_parser_log(
+        &app,
+        &document.kb_id,
+        &document.id,
+        "已收到取消解析请求，正在停止当前任务。",
+    );
+
+    connection
+        .execute(
+            "UPDATE documents SET status = 'failed', error_message = ?2, updated_at = ?3 WHERE id = ?1",
+            params![document.id, "用户已取消解析。", now()],
+        )
+        .map_err(|error| error.to_string())?;
 
     connection
         .query_row(
@@ -2512,6 +2850,7 @@ fn get_document_page(doc_id: String, page_number: i64, state: State<'_, AppState
 }
 
 #[tauri::command]
+<<<<<<< HEAD
 fn get_document_markdown(doc_id: String, state: State<'_, AppState>) -> Result<String, String> {
     let connection = db_connection(&state.db_path)?;
     let document = connection
@@ -2530,6 +2869,9 @@ fn get_document_markdown(doc_id: String, state: State<'_, AppState>) -> Result<S
 
 #[tauri::command]
 fn delete_document(doc_id: String, state: State<'_, AppState>) -> Result<(), String> {
+=======
+fn delete_document(doc_id: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+>>>>>>> 2acaeee (add embedding semantic search)
     let connection = db_connection(&state.db_path)?;
     let document = connection
         .query_row(
@@ -2550,6 +2892,12 @@ fn delete_document(doc_id: String, state: State<'_, AppState>) -> Result<(), Str
         .execute("DELETE FROM documents WHERE id = ?1", [doc_id])
         .map_err(|error| error.to_string())?;
     write_kb_catalog(&state, &document.kb_id)?;
+    let _ = rebuild_semantic_index_for_kb(
+        &app,
+        &state,
+        &document.kb_id,
+        SemanticIndexUpdateMode::RemoveDoc(document.id.clone()),
+    );
     Ok(())
 }
 
@@ -2815,6 +3163,7 @@ fn prepare_state(app: &AppHandle) -> Result<AppState, String> {
         db_path,
         agents: Arc::new(Mutex::new(HashMap::new())),
         agent_session_tags: Arc::new(Mutex::new(HashMap::new())),
+        parse_cancel_requests: Arc::new(Mutex::new(HashSet::new())),
     })
 }
 
@@ -2832,6 +3181,7 @@ pub fn run() {
             delete_knowledge_base,
             upload_pdf,
             retry_document_parse,
+            cancel_document_parse,
             list_documents,
             search_text,
             read_pages,
