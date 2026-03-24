@@ -1,4 +1,4 @@
-use std::{
+﻿use std::{
     cmp::Reverse,
     collections::{HashMap, HashSet},
     fs,
@@ -425,10 +425,10 @@ fn validate_storage_dir(storage_dir: &str) -> Result<(), String> {
     }
     let path = PathBuf::from(trimmed);
     if !path.exists() {
-        return Err(format!("存储目录不存在: {}", trimmed));
+        return Err(format!("瀛樺偍鐩綍涓嶅瓨鍦? {}", trimmed));
     }
     if !path.is_dir() {
-        return Err(format!("存储路径不是文件夹: {}", trimmed));
+        return Err(format!("瀛樺偍璺緞涓嶆槸鏂囦欢澶? {}", trimmed));
     }
     Ok(())
 }
@@ -440,10 +440,10 @@ fn validate_python_runtime_path(python_runtime_path: &str) -> Result<(), String>
     }
     let path = PathBuf::from(trimmed);
     if !path.exists() {
-        return Err(format!("Python 路径不存在: {}", trimmed));
+        return Err(format!("Python 璺緞涓嶅瓨鍦? {}", trimmed));
     }
     if !path.is_file() {
-        return Err(format!("Python 路径不是可执行文件: {}", trimmed));
+        return Err(format!("Python 璺緞涓嶆槸鍙墽琛屾枃浠? {}", trimmed));
     }
     Ok(())
 }
@@ -523,7 +523,7 @@ fn resolve_python_binary_path(app: &AppHandle, state: &AppState) -> Result<PathB
         if path.exists() {
             return Ok(path);
         }
-        return Err(format!("Python 路径不存在: {}", explicit));
+        return Err(format!("Python 璺緞涓嶅瓨鍦? {}", explicit));
     }
 
     if let Ok(env_path) = std::env::var("PAGENEXUS_PYTHON_BIN") {
@@ -610,8 +610,8 @@ fn ensure_parse_not_cancelled(
     stage: &str,
 ) -> Result<(), String> {
     if is_parse_cancel_requested(state, doc_id) {
-        emit_parser_log(app, kb_id, doc_id, format!("解析取消已生效：{stage}"));
-        return Err("文档解析已取消。".to_string());
+        emit_parser_log(app, kb_id, doc_id, format!("瑙ｆ瀽鍙栨秷宸茬敓鏁堬細{stage}"));
+        return Err("鏂囨。瑙ｆ瀽宸插彇娑堛€?.to_string());
     }
     Ok(())
 }
@@ -766,7 +766,7 @@ fn spawn_coding_agent(app: &AppHandle, state: &AppState, kb_id: &str) -> Result<
     let local_embed_script = local_embedder_script_path(app);
     let api_key = settings.packy_api_key.trim();
     if api_key.is_empty() {
-        return Err("未配置 PackyAPI API Key，请先到设置页保存。".to_string());
+        return Err("鏈厤缃?PackyAPI API Key锛岃鍏堝埌璁剧疆椤典繚瀛樸€?.to_string());
     }
 
     let mut child = Command::new(node)
@@ -805,7 +805,7 @@ fn spawn_coding_agent(app: &AppHandle, state: &AppState, kb_id: &str) -> Result<
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("无法启动 pi coding agent：{error}"))?;
+        .map_err(|error| format!("鏃犳硶鍚姩 pi coding agent锛歿error}"))?;
 
     let stdin = child
         .stdin
@@ -930,7 +930,7 @@ fn rebuild_semantic_index_for_kb(
             app,
             kb_id,
             "embedding-index",
-            "Embedding 索引重建已跳过：semantic search 已禁用",
+            "Embedding 绱㈠紩閲嶅缓宸茶烦杩囷細semantic search 宸茬鐢?,
         );
         return Ok(());
     }
@@ -999,7 +999,7 @@ fn rebuild_semantic_index_for_kb(
                 &app_for_stdout,
                 &kb_for_stdout,
                 "embedding-index",
-                format!("Embedding重建: {line}"),
+                format!("Embedding閲嶅缓: {line}"),
             );
         }
     });
@@ -1020,7 +1020,7 @@ fn rebuild_semantic_index_for_kb(
                 &app_for_stderr,
                 &kb_for_stderr,
                 "embedding-index",
-                format!("Embedding重建: {line}"),
+                format!("Embedding閲嶅缓: {line}"),
             );
         }
     });
@@ -1139,7 +1139,7 @@ fn trimmed_line(line: &str, query: &str, terms: &[String]) -> Option<String> {
     if lower.contains(query) || terms.iter().any(|term| lower.contains(term)) {
         let shortened = if normalized.chars().count() > 220 {
             let mut snippet = normalized.chars().take(220).collect::<String>();
-            snippet.push('…');
+            snippet.push('鈥?);
             snippet
         } else {
             normalized.to_string()
@@ -1170,7 +1170,7 @@ fn score_page(text: &str, query: &str, terms: &[String]) -> (i64, Option<String>
             } else {
                 let snippet = compact.chars().take(220).collect::<String>();
                 Some(if compact.chars().count() > 220 {
-                    format!("{snippet}…")
+                    format!("{snippet}鈥?)
                 } else {
                     snippet
                 })
@@ -1191,7 +1191,7 @@ fn supported_document_extension(file_path: &str) -> Option<&'static str> {
 
 fn ensure_supported_document(file_path: &str) -> Result<&'static str, String> {
     supported_document_extension(file_path)
-        .ok_or_else(|| "当前仅支持 PDF / DOC / DOCX / PPT / PPTX / 图片 / HTML 文档。".to_string())
+        .ok_or_else(|| "褰撳墠浠呮敮鎸?PDF / DOC / DOCX / PPT / PPTX / 鍥剧墖 / HTML 鏂囨。銆?.to_string())
 }
 
 fn random_theme(count: i64) -> &'static str {
@@ -1222,16 +1222,12 @@ fn count_pdf_pages(source: &Path) -> Result<usize, String> {
 
 fn count_pdf_pages_with_python(app: &AppHandle, state: &AppState, source: &Path) -> Result<usize, String> {
     let python_bin = resolve_python_binary_path(app, state)?;
-<<<<<<< HEAD
     let probe = r#"import fitz
 import sys
 
 with fitz.open(sys.argv[1]) as doc:
     print(len(doc))
 "#;
-=======
-    let probe = r#"import fitz, sys; doc = fitz.open(sys.argv[1]); print(len(doc)); doc.close()"#;
->>>>>>> 2acaeee (add embedding semantic search)
     let output = Command::new(&python_bin)
         .arg("-c")
         .arg(probe)
@@ -1314,7 +1310,7 @@ fn create_mineru_chunks(
     let all_pages = document.get_pages().into_keys().collect::<Vec<_>>();
     let page_count = all_pages.len();
     if page_count == 0 {
-        return Err("PDF 没有可解析页。".to_string());
+        return Err("PDF 娌℃湁鍙В鏋愰〉銆?.to_string());
     }
 
     let file_size = fs::metadata(source).map_err(|error| error.to_string())?.len();
@@ -1422,7 +1418,7 @@ fn create_mineru_chunks_with_python(
 
     if !splitter_script.exists() {
         return Err(format!(
-            "Python 分片脚本不存在: {}",
+            "Python 鍒嗙墖鑴氭湰涓嶅瓨鍦? {}",
             splitter_script.to_string_lossy()
         ));
     }
@@ -1446,7 +1442,7 @@ fn create_mineru_chunks_with_python(
         .output()
         .map_err(|error| {
             format!(
-                "启动 Python 分片失败 ({}): {}",
+                "鍚姩 Python 鍒嗙墖澶辫触 ({}): {}",
                 python_bin.to_string_lossy(),
                 error
             )
@@ -1454,7 +1450,7 @@ fn create_mineru_chunks_with_python(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Python 分片失败: {}", stderr.trim()));
+        return Err(format!("Python 鍒嗙墖澶辫触: {}", stderr.trim()));
     }
 
     let stdout = String::from_utf8(output.stdout).map_err(|error| error.to_string())?;
@@ -1462,7 +1458,7 @@ fn create_mineru_chunks_with_python(
         serde_json::from_str::<PythonSplitResult>(&stdout).map_err(|error| error.to_string())?;
 
     if split_result.chunks.is_empty() {
-        return Err("Python 分片返回空结果。".to_string());
+        return Err("Python 鍒嗙墖杩斿洖绌虹粨鏋溿€?.to_string());
     }
 
     let chunks = split_result
@@ -1496,7 +1492,7 @@ fn create_mineru_chunks_with_python(
 fn create_single_file_manifest(source: &Path, original_file_name: &str, doc_id: &str) -> Result<Vec<MineruChunkManifest>, String> {
     let size = fs::metadata(source).map_err(|error| error.to_string())?.len();
     if size > MINERU_MAX_FILE_BYTES {
-        return Err("非 PDF 文件暂不支持自动切块，请先压缩或拆分到 200MB 以内。".to_string());
+        return Err("闈?PDF 鏂囦欢鏆備笉鏀寔鑷姩鍒囧潡锛岃鍏堝帇缂╂垨鎷嗗垎鍒?200MB 浠ュ唴銆?.to_string());
     }
 
     Ok(vec![MineruChunkManifest {
@@ -1539,7 +1535,7 @@ async fn submit_mineru_batch(
         app,
         kb_id,
         doc_id,
-        format!("提交 MinerU 批量任务，共 {} 个切块。", chunks.len()),
+        format!("鎻愪氦 MinerU 鎵归噺浠诲姟锛屽叡 {} 涓垏鍧椼€?, chunks.len()),
     );
 
     let submit = client
@@ -1552,16 +1548,16 @@ async fn submit_mineru_batch(
     let submit_status = submit.status();
     let submit_body = submit.text().await.map_err(|error| error.to_string())?;
     if !submit_status.is_success() {
-        return Err(format!("MinerU 批量提交失败：{} {}", submit_status, submit_body));
+        return Err(format!("MinerU 鎵归噺鎻愪氦澶辫触锛歿} {}", submit_status, submit_body));
     }
 
     let envelope: MineruBatchSubmitEnvelope =
         serde_json::from_str(&submit_body).map_err(|error| error.to_string())?;
     if envelope.code != 0 {
-        return Err(format!("MinerU 批量提交失败：{}", envelope.msg));
+        return Err(format!("MinerU 鎵归噺鎻愪氦澶辫触锛歿}", envelope.msg));
     }
     if envelope.data.file_urls.len() != chunks.len() {
-        return Err("MinerU 返回的上传链接数量与切块数量不一致。".to_string());
+        return Err("MinerU 杩斿洖鐨勪笂浼犻摼鎺ユ暟閲忎笌鍒囧潡鏁伴噺涓嶄竴鑷淬€?.to_string());
     }
 
     #[derive(Clone)]
@@ -1574,13 +1570,13 @@ async fn submit_mineru_batch(
     let mut upload_jobs = Vec::<UploadJob>::new();
 
     for (chunk, upload_url) in chunks.iter().zip(envelope.data.file_urls.iter()) {
-        ensure_parse_not_cancelled(app, state, kb_id, doc_id, "准备上传切块前")?;
+        ensure_parse_not_cancelled(app, state, kb_id, doc_id, "鍑嗗涓婁紶鍒囧潡鍓?)?;
         emit_parser_log(
             app,
             kb_id,
             doc_id,
             format!(
-                "上传切块 {} (p.{}-{})",
+                "涓婁紶鍒囧潡 {} (p.{}-{})",
                 chunk.file_name, chunk.page_start, chunk.page_end
             ),
         );
@@ -1598,12 +1594,12 @@ async fn submit_mineru_batch(
             .await
             .map_err(|error| error.to_string())?;
         if !response.status().is_success() {
-            return Err(format!("MinerU 文件上传失败：{} -> {}", chunk.file_name, response.status()));
+            return Err(format!("MinerU 鏂囦欢涓婁紶澶辫触锛歿} -> {}", chunk.file_name, response.status()));
         }
     }
 
     for job_group in upload_jobs.chunks(MINERU_UPLOAD_CONCURRENCY) {
-        ensure_parse_not_cancelled(app, state, kb_id, doc_id, "并发上传切块中")?;
+        ensure_parse_not_cancelled(app, state, kb_id, doc_id, "骞跺彂涓婁紶鍒囧潡涓?)?;
         let mut join_set = tokio::task::JoinSet::new();
 
         for job in job_group {
@@ -1635,7 +1631,7 @@ async fn submit_mineru_batch(
 
     let mut attempts = 0usize;
     loop {
-        ensure_parse_not_cancelled(app, state, kb_id, doc_id, "MinerU 轮询中")?;
+        ensure_parse_not_cancelled(app, state, kb_id, doc_id, "MinerU 杞涓?)?;
         attempts += 1;
         let response = client
             .get(format!(
@@ -1649,13 +1645,13 @@ async fn submit_mineru_batch(
         let status = response.status();
         let body = response.text().await.map_err(|error| error.to_string())?;
         if !status.is_success() {
-            return Err(format!("MinerU 批量轮询失败：{} {}", status, body));
+            return Err(format!("MinerU 鎵归噺杞澶辫触锛歿} {}", status, body));
         }
 
         let result: MineruBatchStatusEnvelope =
             serde_json::from_str(&body).map_err(|error| error.to_string())?;
         if result.code != 0 {
-            return Err(format!("MinerU 批量轮询失败：{}", result.msg));
+            return Err(format!("MinerU 鎵归噺杞澶辫触锛歿}", result.msg));
         }
 
         let all_done = result
@@ -1671,7 +1667,7 @@ async fn submit_mineru_batch(
 
         if let Some(failed) = first_failed {
             return Err(format!(
-                "MinerU 解析失败：{} {}",
+                "MinerU 瑙ｆ瀽澶辫触锛歿} {}",
                 failed.file_name, failed.err_msg
             ));
         }
@@ -1689,15 +1685,15 @@ async fn submit_mineru_batch(
             })
             .collect::<Vec<_>>()
             .join(" | ");
-        emit_parser_log(app, kb_id, doc_id, format!("MinerU 轮询：{progress_line}"));
+        emit_parser_log(app, kb_id, doc_id, format!("MinerU 杞锛歿progress_line}"));
 
         if all_done {
-            emit_parser_log(app, kb_id, doc_id, "MinerU 解析全部完成。");
+            emit_parser_log(app, kb_id, doc_id, "MinerU 瑙ｆ瀽鍏ㄩ儴瀹屾垚銆?);
             return Ok(result.data);
         }
 
         if attempts >= 240 {
-            return Err("MinerU 解析超时，请稍后重试。".to_string());
+            return Err("MinerU 瑙ｆ瀽瓒呮椂锛岃绋嶅悗閲嶈瘯銆?.to_string());
         }
 
         sleep(Duration::from_secs(5)).await;
@@ -1719,7 +1715,7 @@ fn find_single_file_with_suffix(dir: &Path, suffix: &str) -> Result<PathBuf, Str
             return Ok(path);
         }
     }
-    Err(format!("未找到 {}", suffix))
+    Err(format!("鏈壘鍒?{}", suffix))
 }
 
 fn recursive_add_page_offset(value: &mut serde_json::Value, offset: usize) {
@@ -1758,7 +1754,7 @@ fn copy_image_for_merge(
     let file_name = Path::new(relative_path)
         .file_name()
         .and_then(|value| value.to_str())
-        .ok_or_else(|| "无法识别图片文件名。".to_string())?;
+        .ok_or_else(|| "鏃犳硶璇嗗埆鍥剧墖鏂囦欢鍚嶃€?.to_string())?;
     let merged_name = format!("{chunk_label}-{file_name}");
     let target = merged_images_dir.join(&merged_name);
     fs::create_dir_all(merged_images_dir).map_err(|error| error.to_string())?;
@@ -1858,21 +1854,21 @@ async fn merge_mineru_results(
     let mut backend = String::new();
     let mut version_name = String::new();
 
-    emit_parser_log(app, kb_id, doc_id, "开始下载并合并 MinerU 结果。");
+    emit_parser_log(app, kb_id, doc_id, "寮€濮嬩笅杞藉苟鍚堝苟 MinerU 缁撴灉銆?);
 
     for chunk in chunks {
         let result = results
             .iter()
             .find(|item| item.data_id.as_deref() == Some(chunk.data_id.as_str()))
-            .ok_or_else(|| format!("缺少 MinerU 结果：{}", chunk.file_name))?;
+            .ok_or_else(|| format!("缂哄皯 MinerU 缁撴灉锛歿}", chunk.file_name))?;
         let zip_url = result
             .full_zip_url
             .clone()
-            .ok_or_else(|| format!("MinerU 缺少结果包链接：{}", chunk.file_name))?;
+            .ok_or_else(|| format!("MinerU 缂哄皯缁撴灉鍖呴摼鎺ワ細{}", chunk.file_name))?;
 
         let zip_path = downloads_dir.join(format!("{}.zip", chunk.chunk_id));
         if !zip_path.exists() {
-            emit_parser_log(app, kb_id, doc_id, format!("下载结果包：{}", chunk.chunk_id));
+            emit_parser_log(app, kb_id, doc_id, format!("涓嬭浇缁撴灉鍖咃細{}", chunk.chunk_id));
             let bytes = client
                 .get(&zip_url)
                 .send()
@@ -1886,7 +1882,7 @@ async fn merge_mineru_results(
 
         let extract_dir = chunks_dir.join(&chunk.chunk_id);
         if !extract_dir.exists() {
-            emit_parser_log(app, kb_id, doc_id, format!("解压结果包：{}", chunk.chunk_id));
+            emit_parser_log(app, kb_id, doc_id, format!("瑙ｅ帇缁撴灉鍖咃細{}", chunk.chunk_id));
             fs::create_dir_all(&extract_dir).map_err(|error| error.to_string())?;
             let data = fs::read(&zip_path).map_err(|error| error.to_string())?;
             let cursor = Cursor::new(data);
@@ -1896,7 +1892,7 @@ async fn merge_mineru_results(
                 let enclosed = file
                     .enclosed_name()
                     .map(|path| path.to_path_buf())
-                    .ok_or_else(|| "MinerU zip 包含非法路径。".to_string())?;
+                    .ok_or_else(|| "MinerU zip 鍖呭惈闈炴硶璺緞銆?.to_string())?;
                 let out_path = extract_dir.join(enclosed);
                 if file.name().ends_with('/') {
                     fs::create_dir_all(&out_path).map_err(|error| error.to_string())?;
@@ -2006,7 +2002,7 @@ async fn merge_mineru_results(
         .collect::<Vec<_>>()
         .join("\n\n");
     fs::write(doc_dir.join("fulltext.txt"), fulltext).map_err(|error| error.to_string())?;
-    emit_parser_log(app, kb_id, doc_id, "合并完成，已写入 pages.json / fulltext.txt / parsed/*。");
+    emit_parser_log(app, kb_id, doc_id, "鍚堝苟瀹屾垚锛屽凡鍐欏叆 pages.json / fulltext.txt / parsed/*銆?);
 
     Ok(parsed)
 }
@@ -2083,7 +2079,7 @@ fn build_or_reuse_mineru_chunks(
             app,
             kb_id,
             doc_id,
-            format!("检测到切块缓存，直接复用 {} 个输入文件。", cached.len()),
+            format!("妫€娴嬪埌鍒囧潡缂撳瓨锛岀洿鎺ュ鐢?{} 涓緭鍏ユ枃浠躲€?, cached.len()),
         );
         return Ok(cached);
     }
@@ -2127,7 +2123,7 @@ fn build_or_reuse_mineru_chunks(
                 doc_id,
             ) {
                 Ok(chunks) => {
-                    emit_parser_log(app, kb_id, doc_id, "已使用 Python splitter 完成 PDF 切块。");
+                    emit_parser_log(app, kb_id, doc_id, "宸蹭娇鐢?Python splitter 瀹屾垚 PDF 鍒囧潡銆?);
                     chunks
                 }
                 Err(error) => {
@@ -2135,7 +2131,7 @@ fn build_or_reuse_mineru_chunks(
                         app,
                         kb_id,
                         doc_id,
-                        format!("Python splitter 失败，回退 Rust 切块：{error}"),
+                        format!("Python splitter 澶辫触锛屽洖閫€ Rust 鍒囧潡锛歿error}"),
                     );
                     create_mineru_chunks(source, &input_dir, original_file_name, doc_id)?
                 }
@@ -2149,7 +2145,7 @@ fn build_or_reuse_mineru_chunks(
         app,
         kb_id,
         doc_id,
-        format!("切块完成，共 {} 个输入文件。", chunks.len()),
+        format!("鍒囧潡瀹屾垚锛屽叡 {} 涓緭鍏ユ枃浠躲€?, chunks.len()),
     );
     save_chunk_cache_manifest(doc_dir, &chunks)?;
     Ok(chunks)
@@ -2166,11 +2162,11 @@ async fn parse_document_with_mineru(
     mineru_token: &str,
     doc_dir: &Path,
 ) -> Result<ParsedDocumentFile, String> {
-    ensure_parse_not_cancelled(app, state, kb_id, doc_id, "开始解析前")?;
+    ensure_parse_not_cancelled(app, state, kb_id, doc_id, "寮€濮嬭В鏋愬墠")?;
     let chunks =
         build_or_reuse_mineru_chunks(app, state, kb_id, doc_id, source, original_file_name, extension, doc_dir)?;
 
-    ensure_parse_not_cancelled(app, state, kb_id, doc_id, "切块完成后")?;
+    ensure_parse_not_cancelled(app, state, kb_id, doc_id, "鍒囧潡瀹屾垚鍚?)?;
     let batch_status = submit_mineru_batch(app, state, kb_id, doc_id, mineru_token, &chunks).await?;
     let batch_manifest = MineruBatchManifest {
         batch_id: batch_status.batch_id.clone(),
@@ -2182,7 +2178,7 @@ async fn parse_document_with_mineru(
     )
     .map_err(|error| error.to_string())?;
 
-    ensure_parse_not_cancelled(app, state, kb_id, doc_id, "合并结果前")?;
+    ensure_parse_not_cancelled(app, state, kb_id, doc_id, "鍚堝苟缁撴灉鍓?)?;
     let parsed = merge_mineru_results(
         app,
         kb_id,
@@ -2199,7 +2195,7 @@ async fn parse_document_with_mineru(
             app,
             kb_id,
             doc_id,
-            format!("解析成功，但清理切块缓存失败：{}", error),
+            format!("瑙ｆ瀽鎴愬姛锛屼絾娓呯悊鍒囧潡缂撳瓨澶辫触锛歿}", error),
         );
     }
 
@@ -2240,7 +2236,7 @@ fn write_kb_catalog(state: &AppState, kb_id: &str) -> Result<(), String> {
 fn create_knowledge_base(name: String, state: State<'_, AppState>) -> Result<KnowledgeBase, String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return Err("知识库名称不能为空。".to_string());
+        return Err("鐭ヨ瘑搴撳悕绉颁笉鑳戒负绌恒€?.to_string());
     }
 
     let connection = db_connection(&state.db_path)?;
@@ -2298,7 +2294,7 @@ fn delete_knowledge_base(kb_id: String, state: State<'_, AppState>) -> Result<()
         .optional()
         .map_err(|error| error.to_string())?;
     if exists.is_none() {
-        return Err("知识库不存在。".to_string());
+        return Err("鐭ヨ瘑搴撲笉瀛樺湪銆?.to_string());
     }
 
     connection
@@ -2342,13 +2338,13 @@ async fn upload_pdf(
 
     let source = PathBuf::from(&file_path);
     if !source.exists() {
-        return Err("待上传的文档不存在。".to_string());
+        return Err("寰呬笂浼犵殑鏂囨。涓嶅瓨鍦ㄣ€?.to_string());
     }
 
     let file_name = source
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| "无法识别文件名。".to_string())?
+        .ok_or_else(|| "鏃犳硶璇嗗埆鏂囦欢鍚嶃€?.to_string())?
         .to_string();
 
     let doc_id = Uuid::new_v4().to_string();
@@ -2397,12 +2393,12 @@ async fn upload_pdf(
             params![doc_id, now()],
         )
         .map_err(|error| error.to_string())?;
-    emit_parser_log(&app, &kb_id, &doc_id, format!("开始处理文档：{}", initial.file_name));
+    emit_parser_log(&app, &kb_id, &doc_id, format!("寮€濮嬪鐞嗘枃妗ｏ細{}", initial.file_name));
 
     let settings = load_app_settings(&state)?;
     let mineru_token = settings.mineru_api_token.trim().to_string();
     if mineru_token.is_empty() {
-        return Err("未配置 MinerU Token，请先到设置页保存。".to_string());
+        return Err("鏈厤缃?MinerU Token锛岃鍏堝埌璁剧疆椤典繚瀛樸€?.to_string());
     }
 
     let parse_result: Result<ParsedDocumentFile, String> = async {
@@ -2420,10 +2416,10 @@ async fn upload_pdf(
             &app,
             &kb_id,
             &doc_id,
-            format!("切块完成，共 {} 个输入文件。", chunks.len()),
+            format!("鍒囧潡瀹屾垚锛屽叡 {} 涓緭鍏ユ枃浠躲€?, chunks.len()),
         );
 
-        ensure_parse_not_cancelled(&app, &state, &kb_id, &doc_id, "切块完成后")?;
+        ensure_parse_not_cancelled(&app, &state, &kb_id, &doc_id, "鍒囧潡瀹屾垚鍚?)?;
         let batch_status = submit_mineru_batch(&app, &state, &kb_id, &doc_id, &mineru_token, &chunks).await?;
         let batch_manifest = MineruBatchManifest {
             batch_id: batch_status.batch_id.clone(),
@@ -2435,7 +2431,7 @@ async fn upload_pdf(
         )
         .map_err(|error| error.to_string())?;
 
-        ensure_parse_not_cancelled(&app, &state, &kb_id, &doc_id, "合并结果前")?;
+        ensure_parse_not_cancelled(&app, &state, &kb_id, &doc_id, "鍚堝苟缁撴灉鍓?)?;
         merge_mineru_results(
             &app,
             &kb_id,
@@ -2469,14 +2465,14 @@ async fn upload_pdf(
     }
 
     let parsed = parse_result?;
-    ensure_parse_not_cancelled(&app, &state, &kb_id, &doc_id, "写入解析结果前")?;
+    ensure_parse_not_cancelled(&app, &state, &kb_id, &doc_id, "鍐欏叆瑙ｆ瀽缁撴灉鍓?)?;
     clear_parse_cancel(&state, &doc_id);
     if let Err(error) = clear_chunk_cache(&doc_dir) {
         emit_parser_log(
             &app,
             &kb_id,
             &doc_id,
-            format!("解析成功，但清理切块缓存失败：{}", error),
+            format!("瑙ｆ瀽鎴愬姛锛屼絾娓呯悊鍒囧潡缂撳瓨澶辫触锛歿}", error),
         );
     }
 
@@ -2494,19 +2490,19 @@ async fn upload_pdf(
         )
         .map_err(|error| error.to_string())?;
     write_kb_catalog(&state, &kb_id)?;
-    emit_parser_log(&app, &kb_id, &doc_id, "开始重建知识库 embedding 索引。");
+    emit_parser_log(&app, &kb_id, &doc_id, "寮€濮嬮噸寤虹煡璇嗗簱 embedding 绱㈠紩銆?);
     match rebuild_semantic_index_for_kb(
         &app,
         &state,
         &kb_id,
         SemanticIndexUpdateMode::UpsertDoc(doc_id.clone()),
     ) {
-        Ok(_) => emit_parser_log(&app, &kb_id, &doc_id, "知识库 embedding 索引重建完成。"),
+        Ok(_) => emit_parser_log(&app, &kb_id, &doc_id, "鐭ヨ瘑搴?embedding 绱㈠紩閲嶅缓瀹屾垚銆?),
         Err(error) => emit_parser_log(
             &app,
             &kb_id,
             &doc_id,
-            format!("知识库 embedding 索引重建失败：{error}"),
+            format!("鐭ヨ瘑搴?embedding 绱㈠紩閲嶅缓澶辫触锛歿error}"),
         ),
     }
 
@@ -2530,23 +2526,23 @@ async fn retry_document_parse(doc_id: String, app: AppHandle, state: State<'_, A
         )
         .optional()
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| "文档不存在。".to_string())?;
+        .ok_or_else(|| "鏂囨。涓嶅瓨鍦ㄣ€?.to_string())?;
 
     if document.status == "parsing" {
-        return Err("文档正在解析中，请稍后重试。".to_string());
+        return Err("鏂囨。姝ｅ湪瑙ｆ瀽涓紝璇风◢鍚庨噸璇曘€?.to_string());
     }
     clear_parse_cancel(&state, &document.id);
 
     let extension = ensure_supported_document(&document.source_path)?;
     let source = PathBuf::from(&document.source_path);
     if !source.exists() {
-        return Err("文档源文件不存在，无法重试。".to_string());
+        return Err("鏂囨。婧愭枃浠朵笉瀛樺湪锛屾棤娉曢噸璇曘€?.to_string());
     }
 
     let settings = load_app_settings(&state)?;
     let mineru_token = settings.mineru_api_token.trim().to_string();
     if mineru_token.is_empty() {
-        return Err("未配置 MinerU Token，请先到设置页保存。".to_string());
+        return Err("鏈厤缃?MinerU Token锛岃鍏堝埌璁剧疆椤典繚瀛樸€?.to_string());
     }
 
     connection
@@ -2559,7 +2555,7 @@ async fn retry_document_parse(doc_id: String, app: AppHandle, state: State<'_, A
         &app,
         &document.kb_id,
         &document.id,
-        format!("开始重试解析文档：{}", document.file_name),
+        format!("寮€濮嬮噸璇曡В鏋愭枃妗ｏ細{}", document.file_name),
     );
 
     let doc_dir = document_dir(&state, &document.kb_id, &document.id);
@@ -2597,7 +2593,7 @@ async fn retry_document_parse(doc_id: String, app: AppHandle, state: State<'_, A
     }
 
     let parsed = parse_result?;
-    ensure_parse_not_cancelled(&app, &state, &document.kb_id, &document.id, "写入解析结果前")?;
+    ensure_parse_not_cancelled(&app, &state, &document.kb_id, &document.id, "鍐欏叆瑙ｆ瀽缁撴灉鍓?)?;
     clear_parse_cancel(&state, &document.id);
     let connection = db_connection(&state.db_path)?;
     connection
@@ -2617,7 +2613,7 @@ async fn retry_document_parse(doc_id: String, app: AppHandle, state: State<'_, A
         &app,
         &document.kb_id,
         &document.id,
-        "开始重建知识库 embedding 索引。",
+        "寮€濮嬮噸寤虹煡璇嗗簱 embedding 绱㈠紩銆?,
     );
     match rebuild_semantic_index_for_kb(
         &app,
@@ -2629,13 +2625,13 @@ async fn retry_document_parse(doc_id: String, app: AppHandle, state: State<'_, A
             &app,
             &document.kb_id,
             &document.id,
-            "知识库 embedding 索引重建完成。",
+            "鐭ヨ瘑搴?embedding 绱㈠紩閲嶅缓瀹屾垚銆?,
         ),
         Err(error) => emit_parser_log(
             &app,
             &document.kb_id,
             &document.id,
-            format!("知识库 embedding 索引重建失败：{error}"),
+            format!("鐭ヨ瘑搴?embedding 绱㈠紩閲嶅缓澶辫触锛歿error}"),
         ),
     }
 
@@ -2659,10 +2655,10 @@ fn cancel_document_parse(doc_id: String, app: AppHandle, state: State<'_, AppSta
         )
         .optional()
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| "文档不存在。".to_string())?;
+        .ok_or_else(|| "鏂囨。涓嶅瓨鍦ㄣ€?.to_string())?;
 
     if document.status != "parsing" {
-        return Err("当前文档不在解析中，无法取消。".to_string());
+        return Err("褰撳墠鏂囨。涓嶅湪瑙ｆ瀽涓紝鏃犳硶鍙栨秷銆?.to_string());
     }
 
     request_parse_cancel(&state, &document.id);
@@ -2670,13 +2666,13 @@ fn cancel_document_parse(doc_id: String, app: AppHandle, state: State<'_, AppSta
         &app,
         &document.kb_id,
         &document.id,
-        "已收到取消解析请求，正在停止当前任务。",
+        "宸叉敹鍒板彇娑堣В鏋愯姹傦紝姝ｅ湪鍋滄褰撳墠浠诲姟銆?,
     );
 
     connection
         .execute(
             "UPDATE documents SET status = 'failed', error_message = ?2, updated_at = ?3 WHERE id = ?1",
-            params![document.id, "用户已取消解析。", now()],
+            params![document.id, "鐢ㄦ埛宸插彇娑堣В鏋愩€?, now()],
         )
         .map_err(|error| error.to_string())?;
 
@@ -2811,7 +2807,7 @@ fn read_pages(
         .collect::<Vec<_>>();
 
     if pages.is_empty() {
-        return Err("指定页码范围没有可读内容。".to_string());
+        return Err("鎸囧畾椤电爜鑼冨洿娌℃湁鍙鍐呭銆?.to_string());
     }
 
     let continuation = if end < document.page_count {
@@ -2838,7 +2834,7 @@ fn get_document_page(doc_id: String, page_number: i64, state: State<'_, AppState
         .pages
         .into_iter()
         .find(|page| page.page_number == page_number)
-        .ok_or_else(|| "指定页码不存在。".to_string())?;
+        .ok_or_else(|| "鎸囧畾椤电爜涓嶅瓨鍦ㄣ€?.to_string())?;
 
     Ok(PagePreview {
         doc_id: document.id,
@@ -2850,7 +2846,6 @@ fn get_document_page(doc_id: String, page_number: i64, state: State<'_, AppState
 }
 
 #[tauri::command]
-<<<<<<< HEAD
 fn get_document_markdown(doc_id: String, state: State<'_, AppState>) -> Result<String, String> {
     let connection = db_connection(&state.db_path)?;
     let document = connection
@@ -2864,14 +2859,11 @@ fn get_document_markdown(doc_id: String, state: State<'_, AppState>) -> Result<S
     let markdown_path = document_dir(&state, &document.kb_id, &document.id)
         .join("parsed")
         .join("full.md");
-    fs::read_to_string(&markdown_path).map_err(|error| format!("读取 markdown 失败 ({}): {}", markdown_path.display(), error))
+    fs::read_to_string(&markdown_path).map_err(|error| format!("璇诲彇 markdown 澶辫触 ({}): {}", markdown_path.display(), error))
 }
 
 #[tauri::command]
-fn delete_document(doc_id: String, state: State<'_, AppState>) -> Result<(), String> {
-=======
 fn delete_document(doc_id: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
->>>>>>> 2acaeee (add embedding semantic search)
     let connection = db_connection(&state.db_path)?;
     let document = connection
         .query_row(
@@ -2881,7 +2873,7 @@ fn delete_document(doc_id: String, app: AppHandle, state: State<'_, AppState>) -
         )
         .optional()
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| "文档不存在。".to_string())?;
+        .ok_or_else(|| "鏂囨。涓嶅瓨鍦ㄣ€?.to_string())?;
 
     let target_dir = document_dir(&state, &document.kb_id, &document.id);
     if target_dir.exists() {
@@ -3097,7 +3089,7 @@ async fn check_model_health(state: State<'_, AppState>) -> Result<ModelHealth, S
         return Ok(ModelHealth {
             backend_status: "online".to_string(),
             model_status: "unavailable".to_string(),
-            detail: "未配置 PackyAPI API Key，请到设置页填写。".to_string(),
+            detail: "鏈厤缃?PackyAPI API Key锛岃鍒拌缃〉濉啓銆?.to_string(),
         });
     }
 
@@ -3114,7 +3106,7 @@ async fn check_model_health(state: State<'_, AppState>) -> Result<ModelHealth, S
                 return Ok(ModelHealth {
                     backend_status: "online".to_string(),
                     model_status: "unavailable".to_string(),
-                    detail: "PackyAPI 返回鉴权失败，请检查设置页里的 API Key。".to_string(),
+                    detail: "PackyAPI 杩斿洖閴存潈澶辫触锛岃妫€鏌ヨ缃〉閲岀殑 API Key銆?.to_string(),
                 });
             }
 
@@ -3122,7 +3114,7 @@ async fn check_model_health(state: State<'_, AppState>) -> Result<ModelHealth, S
                 return Ok(ModelHealth {
                     backend_status: "offline".to_string(),
                     model_status: "unavailable".to_string(),
-                    detail: format!("PackyAPI 响应异常：{}", response.status()),
+                    detail: format!("PackyAPI 鍝嶅簲寮傚父锛歿}", response.status()),
                 });
             }
 
@@ -3133,16 +3125,16 @@ async fn check_model_health(state: State<'_, AppState>) -> Result<ModelHealth, S
                 backend_status: "online".to_string(),
                 model_status: if found { "ready" } else { "unavailable" }.to_string(),
                 detail: if found {
-                    format!("模型 {} 可用。", settings.packy_model_id)
+                    format!("妯″瀷 {} 鍙敤銆?, settings.packy_model_id)
                 } else {
-                    format!("PackyAPI 已连通，但未发现模型 {}。", settings.packy_model_id)
+                    format!("PackyAPI 宸茶繛閫氾紝浣嗘湭鍙戠幇妯″瀷 {}銆?, settings.packy_model_id)
                 },
             })
         }
         Err(error) => Ok(ModelHealth {
             backend_status: "offline".to_string(),
             model_status: "unavailable".to_string(),
-            detail: format!("无法连接 PackyAPI：{error}"),
+            detail: format!("鏃犳硶杩炴帴 PackyAPI锛歿error}"),
         }),
     }
 }
@@ -3219,10 +3211,10 @@ mod tests {
 
     #[test]
     fn score_page_prefers_exact_hits() {
-        let text = "量子计算可以利用叠加态。\n第二段继续解释量子计算。";
-        let (score, snippet) = score_page(text, "量子计算", &["量子计算".to_string()]);
+        let text = "閲忓瓙璁＄畻鍙互鍒╃敤鍙犲姞鎬併€俓n绗簩娈电户缁В閲婇噺瀛愯绠椼€?;
+        let (score, snippet) = score_page(text, "閲忓瓙璁＄畻", &["閲忓瓙璁＄畻".to_string()]);
         assert!(score >= 100);
-        assert!(snippet.unwrap().contains("量子计算"));
+        assert!(snippet.unwrap().contains("閲忓瓙璁＄畻"));
     }
 
     #[test]
@@ -3298,3 +3290,5 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 }
+
+
