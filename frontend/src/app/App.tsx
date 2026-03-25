@@ -35,7 +35,7 @@ type WorkspaceSession = {
 const EMPTY_HEALTH: ModelHealth = {
   backend_status: "offline",
   model_status: "unavailable",
-  detail: "灏氭湭瀹屾垚妯″瀷鍋ュ悍妫€鏌ャ€?,
+  detail: "Model health check has not been run yet.",
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -143,7 +143,7 @@ export function App() {
       setHealth(modelHealth);
       logDiagnostic(modelHealth.detail);
     } catch (error) {
-      logDiagnostic(`鍋ュ悍妫€鏌ュけ璐ワ細${String(error)}`);
+      logDiagnostic(`Health check failed: ${String(error)}`);
     }
   };
 
@@ -161,7 +161,7 @@ export function App() {
       })
       .catch((error) => {
         isSwitchingSessionRef.current = false;
-        logDiagnostic(`鍒囨崲浼氳瘽澶辫触锛?{String(error)}`);
+        logDiagnostic(`Failed to switch session: ${String(error)}`);
       });
   };
 
@@ -180,7 +180,7 @@ export function App() {
     const session: WorkspaceSession = {
       id: `session-${kbId}-1`,
       kbId,
-      title: `${kbName} 路 浼氳瘽 1`,
+      title: `${kbName} / Session 1`,
     };
     setWorkspaceSessions((previous) => [session, ...previous]);
     setActiveSessionId(session.id);
@@ -259,10 +259,10 @@ export function App() {
         logDiagnostic(`Agent stderr: ${payload.line}`);
       }
       if (payload?.type === "process_exit") {
-        logDiagnostic("pi coding agent 宸查€€鍑恒€?);
+        logDiagnostic("pi coding agent exited.");
       }
       if (payload?.type === "response" && payload?.success === false && payload?.error) {
-        logDiagnostic(`Agent 閿欒锛?{payload.error}`);
+        logDiagnostic(`Agent error: ${payload.error}`);
       }
     });
 
@@ -306,9 +306,9 @@ export function App() {
         const session = await CodingAgentSessionAdapter.create(activeKbId);
         session.subscribe((event) => {
           if (activeKbRef.current !== activeKbId) return;
-          if (event.type === "tool_execution_start") logDiagnostic(`宸ュ叿寮€濮嬶細${event.toolName}`);
+          if (event.type === "tool_execution_start") logDiagnostic(`Tool started: ${event.toolName}`);
           if (event.type === "tool_execution_end") {
-            logDiagnostic(`${event.isError ? "宸ュ叿澶辫触" : "宸ュ叿瀹屾垚"}锛?{event.toolName}`);
+            logDiagnostic(`${event.isError ? "Tool failed" : "Tool finished"}: ${event.toolName}`);
           }
         });
 
@@ -319,9 +319,9 @@ export function App() {
 
         activeSessionRef.current = session;
         setActiveAgent(asAgent(session));
-        logDiagnostic("pi coding agent 宸茶繛鎺ャ€?);
+        logDiagnostic("pi coding agent connected.");
       } catch (error) {
-        logDiagnostic(`鍚姩鐭ヨ瘑搴?Agent 澶辫触锛?{String(error)}`);
+        logDiagnostic(`Failed to start knowledge-base Agent: ${String(error)}`);
       } finally {
         if (!cancelled) setIsBootingAgent(false);
       }
@@ -344,7 +344,7 @@ export function App() {
   const handleCreateKnowledgeBase = async () => {
     const name = newKbName.trim();
     if (!name) {
-      logDiagnostic("璇疯緭鍏ョ煡璇嗗簱鍚嶇О銆?);
+      logDiagnostic("Please enter a knowledge base name.");
       return;
     }
     setIsCreatingKb(true);
@@ -354,9 +354,9 @@ export function App() {
       setIsCreateKbOpen(false);
       setNewKbName("");
       enterWorkspace(knowledgeBase);
-      logDiagnostic(`宸插垱寤虹煡璇嗗簱锛?{knowledgeBase.name}`);
+      logDiagnostic(`Created knowledge base: ${knowledgeBase.name}`);
     } catch (error) {
-      logDiagnostic(`鍒涘缓鐭ヨ瘑搴撳け璐ワ細${String(error)}`);
+      logDiagnostic(`Failed to create knowledge base: ${String(error)}`);
     } finally {
       setIsCreatingKb(false);
     }
@@ -368,7 +368,7 @@ export function App() {
     const session: WorkspaceSession = {
       id: `session-${activeKb.id}-${Date.now()}`,
       kbId: activeKb.id,
-      title: `${activeKb.name} 路 浼氳瘽 ${count}`,
+      title: `${activeKb.name} / Session ${count}`,
     };
     setWorkspaceSessions((previous) => [session, ...previous]);
     setActiveSessionId(session.id);
@@ -380,8 +380,8 @@ export function App() {
     const target = workspaceSessions.find((session) => session.id === sessionId && session.kbId === activeKbId);
     if (!target) return;
 
-    const confirmed = await confirm(`纭鍒犻櫎浼氳瘽銆?{target.title}銆嶏紵`, {
-      title: "鍒犻櫎浼氳瘽",
+    const confirmed = await confirm(`Confirm deleting session "${target.title}"?`, {
+      title: "Delete Session",
       kind: "warning",
     });
     if (!confirmed) return;
@@ -401,22 +401,22 @@ export function App() {
         const fallback: WorkspaceSession = {
           id: `session-${activeKbId}-${Date.now()}`,
           kbId: activeKbId,
-          title: `${activeKb?.name ?? "Workspace"} 路 浼氳瘽 1`,
+          title: `${activeKb?.name ?? "Workspace"} / Session 1`,
         };
         setWorkspaceSessions((previous) => [fallback, ...previous]);
         setActiveSessionId(fallback.id);
         switchAgentSession(activeKbId, fallback.id, true);
       }
 
-      logDiagnostic(`宸插垹闄や細璇濓細${target.title}`);
+      logDiagnostic(`Deleted session: ${target.title}`);
     } catch (error) {
-      logDiagnostic(`鍒犻櫎浼氳瘽澶辫触锛?{String(error)}`);
+      logDiagnostic(`Failed to delete session: ${String(error)}`);
     }
   };
 
   const handleUpload = async () => {
     if (!activeKbId) {
-      logDiagnostic("璇峰厛鍒涘缓鎴栭€夋嫨涓€涓煡璇嗗簱銆?);
+      logDiagnostic("Please create or select a knowledge base first.");
       return;
     }
     const selected = await open({
@@ -442,27 +442,30 @@ export function App() {
     try {
       const document = await uploadPdf(activeKbId, selected);
       await refreshDocuments(activeKbId);
-      logDiagnostic(`MinerU 瑙ｆ瀽瀹屾垚锛?{document.file_name} (${document.status})`);
+      logDiagnostic(`MinerU parse finished: ${document.file_name} (${document.status})`);
     } catch (error) {
       setDocumentsByKb((previous) => ({
         ...previous,
         [activeKbId]: (previous[activeKbId] ?? []).filter((document) => document.id !== optimisticDocument.id),
       }));
-      logDiagnostic(`涓婁紶澶辫触锛?{String(error)}`);
+      logDiagnostic(`Upload failed: ${String(error)}`);
     } finally {
       setIsUploading(false);
     }
   };
 
   const handleDeleteDocument = async (documentId: string) => {
-    const confirmed = await confirm("纭鍒犻櫎杩欎唤鏂囨。鍙婂叾瑙ｆ瀽缁撴灉锛?, { title: "鍒犻櫎鏂囨。", kind: "warning" });
+    const confirmed = await confirm("Confirm deleting this document and its parsed outputs?", {
+      title: "Delete Document",
+      kind: "warning",
+    });
     if (!confirmed) return;
     try {
       await deleteDocument(documentId);
       if (activeKbId) await refreshDocuments(activeKbId);
-      logDiagnostic(`宸插垹闄ゆ枃妗?${documentId}`);
+      logDiagnostic(`Deleted document: ${documentId}`);
     } catch (error) {
-      logDiagnostic(`鍒犻櫎鏂囨。澶辫触锛?{String(error)}`);
+      logDiagnostic(`Failed to delete document: ${String(error)}`);
     }
   };
 
@@ -477,16 +480,16 @@ export function App() {
       }));
       const nextDocument = await retryDocumentParse(documentId);
       await refreshDocuments(activeKbId);
-      logDiagnostic(`閲嶈瘯瑙ｆ瀽瀹屾垚锛?{nextDocument.file_name} (${nextDocument.status})`);
+      logDiagnostic(`Retry parse finished: ${nextDocument.file_name} (${nextDocument.status})`);
     } catch (error) {
       await refreshDocuments(activeKbId);
-      logDiagnostic(`閲嶈瘯瑙ｆ瀽澶辫触锛?{String(error)}`);
+      logDiagnostic(`Retry parse failed: ${String(error)}`);
     }
   };
 
   const handleDeleteKnowledgeBase = async (kbId: string, kbName: string) => {
-    const confirmed = await confirm(`纭鍒犻櫎鐭ヨ瘑搴撱€?{kbName}銆嶅強鍏跺叏閮ㄦ枃妗ｅ拰浼氳瘽锛焋, {
-      title: "鍒犻櫎鐭ヨ瘑搴?,
+    const confirmed = await confirm(`Confirm deleting knowledge base "${kbName}" and all its documents/sessions?`, {
+      title: "Delete Knowledge Base",
       kind: "warning",
     });
     if (!confirmed) return;
@@ -504,9 +507,9 @@ export function App() {
         setActiveSessionId(null);
         setView("dashboard");
       }
-      logDiagnostic(`宸插垹闄ょ煡璇嗗簱锛?{kbName}`);
+      logDiagnostic(`Deleted knowledge base: ${kbName}`);
     } catch (error) {
-      logDiagnostic(`鍒犻櫎鐭ヨ瘑搴撳け璐ワ細${String(error)}`);
+      logDiagnostic(`Failed to delete knowledge base: ${String(error)}`);
     }
   };
 
@@ -546,11 +549,11 @@ export function App() {
       setAgentBootNonce((value) => value + 1);
       await refreshHealth();
       if (nextSettings.storage_dir && nextSettings.storage_dir !== previousStoragePath) {
-        logDiagnostic("瀛樺偍鐩綍宸蹭繚瀛橈紝閲嶅惎搴旂敤鍚庣敓鏁堛€?);
+        logDiagnostic("Storage directory saved. Restart the app to apply.");
       }
-      logDiagnostic("妯″瀷璁剧疆宸蹭繚瀛樸€?);
+      logDiagnostic("Settings saved.");
     } catch (error) {
-      logDiagnostic(`淇濆瓨璁剧疆澶辫触锛?{String(error)}`);
+      logDiagnostic(`Failed to save settings: ${String(error)}`);
     } finally {
       setIsSavingSettings(false);
     }
@@ -585,7 +588,7 @@ export function App() {
             isUploading={isUploading}
             activeDocuments={activeDocuments}
             activePreviewDocId={activePreviewDocId}
-            activePreviewDocName={activePreviewDoc?.file_name ?? "鏈€夋嫨鏂囨。"}
+            activePreviewDocName={activePreviewDoc?.file_name ?? "No document selected"}
             activePreviewMarkdown={activePreviewMarkdown}
             activePreviewSourcePath={activePreviewDoc?.source_path}
             previewLoading={previewLoading}
@@ -638,4 +641,3 @@ export function App() {
     </div>
   );
 }
-

@@ -44,6 +44,12 @@ struct AppSettings {
     packy_api_key: String,
     packy_api_base_url: String,
     packy_model_id: String,
+    semantic_search_enabled: bool,
+    embedding_mode: String,
+    embedding_api_key: String,
+    embedding_api_base_url: String,
+    embedding_model_id: String,
+    embedding_local_model_id: String,
     mineru_api_token: String,
     storage_dir: String,
     python_runtime_path: String,
@@ -55,6 +61,12 @@ impl Default for AppSettings {
             packy_api_key: String::new(),
             packy_api_base_url: PACKY_API_BASE_URL.to_string(),
             packy_model_id: PACKY_MODEL_ID.to_string(),
+            semantic_search_enabled: true,
+            embedding_mode: String::new(),
+            embedding_api_key: String::new(),
+            embedding_api_base_url: PACKY_API_BASE_URL.to_string(),
+            embedding_model_id: "text-embedding-3-small".to_string(),
+            embedding_local_model_id: "google/embeddinggemma-300m".to_string(),
             mineru_api_token: String::new(),
             storage_dir: String::new(),
             python_runtime_path: String::new(),
@@ -585,6 +597,23 @@ fn coding_agent_script_path(app: &AppHandle) -> PathBuf {
     local
 }
 
+fn local_embedder_script_path(app: &AppHandle) -> PathBuf {
+    let local = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../python/local_embedder.py");
+    if local.exists() {
+        return local;
+    }
+
+    for candidate in ["python/local_embedder.py", "_up_/python/local_embedder.py"] {
+        if let Some(path) = app.path().resolve(candidate, BaseDirectory::Resource).ok() {
+            if path.exists() {
+                return path;
+            }
+        }
+    }
+
+    local
+}
+
 fn sanitize_session_tag(session_id: &str) -> String {
     let trimmed = session_id.trim();
     if trimmed.is_empty() {
@@ -698,6 +727,7 @@ fn spawn_coding_agent(app: &AppHandle, state: &AppState, kb_id: &str) -> Result<
     let node = node_binary_path(app);
     let settings = load_app_settings(state)?;
     let python_bin = resolve_python_binary_path(app, state)?;
+    let local_embed_script = local_embedder_script_path(app);
     let api_key = settings.packy_api_key.trim();
     if api_key.is_empty() {
         return Err("未配置 PackyAPI API Key，请先到设置页保存。".to_string());
@@ -711,6 +741,29 @@ fn spawn_coding_agent(app: &AppHandle, state: &AppState, kb_id: &str) -> Result<
         .env("PACKY_API_KEY", api_key)
         .env("PACKY_API_BASE_URL", &settings.packy_api_base_url)
         .env("PACKY_MODEL_ID", &settings.packy_model_id)
+        .env(
+            "PAGENEXUS_ENABLE_SEMANTIC_SEARCH",
+            if settings.semantic_search_enabled {
+                "1"
+            } else {
+                "0"
+            },
+        )
+        .env("PAGENEXUS_FORCE_RETRIEVAL", "1")
+        .env(
+            "PAGENEXUS_FORCE_SEMANTIC_SEARCH",
+            if settings.semantic_search_enabled {
+                "1"
+            } else {
+                "0"
+            },
+        )
+        .env("PAGENEXUS_EMBEDDING_MODE", &settings.embedding_mode)
+        .env("PAGENEXUS_EMBEDDING_API_KEY", &settings.embedding_api_key)
+        .env("PAGENEXUS_EMBEDDING_API_BASE_URL", &settings.embedding_api_base_url)
+        .env("PAGENEXUS_EMBEDDING_MODEL", &settings.embedding_model_id)
+        .env("PAGENEXUS_EMBEDDING_LOCAL_MODEL", &settings.embedding_local_model_id)
+        .env("PAGENEXUS_LOCAL_EMBED_SCRIPT", local_embed_script)
         .env("PAGENEXUS_PYTHON_BIN", python_bin)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

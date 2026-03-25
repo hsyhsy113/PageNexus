@@ -6,7 +6,7 @@ interface Props {
   open: boolean;
   value: string;
   loading: boolean;
-  inputRef: RefObject<InputRef | null>;
+  inputRef: RefObject<InputRef>;
   onChange: (value: string) => void;
   onCancel: () => void;
   onCreate: () => void;
