@@ -156,7 +156,14 @@ export class CodingAgentSessionAdapter {
     }
 
     if (type === "process_exit") {
-      this.state = { ...this.state, isStreaming: false };
+      this.state = {
+        ...this.state,
+        isStreaming: false,
+        messages: this.state.streamMessage
+          ? replaceOrAppendMessage(this.state.messages, this.state.streamMessage)
+          : this.state.messages,
+        streamMessage: null,
+      };
       return;
     }
 

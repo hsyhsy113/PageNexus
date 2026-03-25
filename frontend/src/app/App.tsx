@@ -1,4 +1,4 @@
-import { listen } from "@tauri-apps/api/event";
+﻿import { listen } from "@tauri-apps/api/event";
 import { confirm, open } from "@tauri-apps/plugin-dialog";
 import type { InputRef } from "antd";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -35,13 +35,19 @@ type WorkspaceSession = {
 const EMPTY_HEALTH: ModelHealth = {
   backend_status: "offline",
   model_status: "unavailable",
-  detail: "尚未完成模型健康检查。",
+  detail: "Model health check has not been run yet.",
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
   packy_api_key: "",
   packy_api_base_url: "https://www.packyapi.com/v1",
   packy_model_id: "gpt-5.4-low",
+  semantic_search_enabled: true,
+  embedding_mode: "",
+  embedding_api_key: "",
+  embedding_api_base_url: "https://www.packyapi.com/v1",
+  embedding_model_id: "text-embedding-3-small",
+  embedding_local_model_id: "google/embeddinggemma-300m",
   mineru_api_token: "",
   storage_dir: "",
   python_runtime_path: "",
@@ -143,7 +149,7 @@ export function App() {
       setHealth(modelHealth);
       logDiagnostic(modelHealth.detail);
     } catch (error) {
-      logDiagnostic(`健康检查失败：${String(error)}`);
+      logDiagnostic(`Health check failed: ${String(error)}`);
     }
   };
 
@@ -161,7 +167,7 @@ export function App() {
       })
       .catch((error) => {
         isSwitchingSessionRef.current = false;
-        logDiagnostic(`切换会话失败：${String(error)}`);
+        logDiagnostic(`Failed to switch session: ${String(error)}`);
       });
   };
 
@@ -180,7 +186,7 @@ export function App() {
     const session: WorkspaceSession = {
       id: `session-${kbId}-1`,
       kbId,
-      title: `${kbName} · 会话 1`,
+      title: `${kbName} / Session 1`,
     };
     setWorkspaceSessions((previous) => [session, ...previous]);
     setActiveSessionId(session.id);
@@ -259,10 +265,10 @@ export function App() {
         logDiagnostic(`Agent stderr: ${payload.line}`);
       }
       if (payload?.type === "process_exit") {
-        logDiagnostic("pi coding agent 已退出。");
+        logDiagnostic("pi coding agent exited.");
       }
       if (payload?.type === "response" && payload?.success === false && payload?.error) {
-        logDiagnostic(`Agent 错误：${payload.error}`);
+        logDiagnostic(`Agent error: ${payload.error}`);
       }
     });
 
@@ -306,9 +312,9 @@ export function App() {
         const session = await CodingAgentSessionAdapter.create(activeKbId);
         session.subscribe((event) => {
           if (activeKbRef.current !== activeKbId) return;
-          if (event.type === "tool_execution_start") logDiagnostic(`工具开始：${event.toolName}`);
+          if (event.type === "tool_execution_start") logDiagnostic(`Tool started: ${event.toolName}`);
           if (event.type === "tool_execution_end") {
-            logDiagnostic(`${event.isError ? "工具失败" : "工具完成"}：${event.toolName}`);
+            logDiagnostic(`${event.isError ? "Tool failed" : "Tool finished"}: ${event.toolName}`);
           }
         });
 
@@ -319,9 +325,9 @@ export function App() {
 
         activeSessionRef.current = session;
         setActiveAgent(asAgent(session));
-        logDiagnostic("pi coding agent 已连接。");
+        logDiagnostic("pi coding agent connected.");
       } catch (error) {
-        logDiagnostic(`启动知识库 Agent 失败：${String(error)}`);
+        logDiagnostic(`Failed to start knowledge-base Agent: ${String(error)}`);
       } finally {
         if (!cancelled) setIsBootingAgent(false);
       }
@@ -344,7 +350,7 @@ export function App() {
   const handleCreateKnowledgeBase = async () => {
     const name = newKbName.trim();
     if (!name) {
-      logDiagnostic("请输入知识库名称。");
+      logDiagnostic("Please enter a knowledge base name.");
       return;
     }
     setIsCreatingKb(true);
@@ -354,9 +360,9 @@ export function App() {
       setIsCreateKbOpen(false);
       setNewKbName("");
       enterWorkspace(knowledgeBase);
-      logDiagnostic(`已创建知识库：${knowledgeBase.name}`);
+      logDiagnostic(`Created knowledge base: ${knowledgeBase.name}`);
     } catch (error) {
-      logDiagnostic(`创建知识库失败：${String(error)}`);
+      logDiagnostic(`Failed to create knowledge base: ${String(error)}`);
     } finally {
       setIsCreatingKb(false);
     }
@@ -368,7 +374,7 @@ export function App() {
     const session: WorkspaceSession = {
       id: `session-${activeKb.id}-${Date.now()}`,
       kbId: activeKb.id,
-      title: `${activeKb.name} · 会话 ${count}`,
+      title: `${activeKb.name} / Session ${count}`,
     };
     setWorkspaceSessions((previous) => [session, ...previous]);
     setActiveSessionId(session.id);
@@ -380,8 +386,8 @@ export function App() {
     const target = workspaceSessions.find((session) => session.id === sessionId && session.kbId === activeKbId);
     if (!target) return;
 
-    const confirmed = await confirm(`确认删除会话「${target.title}」？`, {
-      title: "删除会话",
+    const confirmed = await confirm(`Confirm deleting session "${target.title}"?`, {
+      title: "Delete Session",
       kind: "warning",
     });
     if (!confirmed) return;
@@ -401,22 +407,22 @@ export function App() {
         const fallback: WorkspaceSession = {
           id: `session-${activeKbId}-${Date.now()}`,
           kbId: activeKbId,
-          title: `${activeKb?.name ?? "Workspace"} · 会话 1`,
+          title: `${activeKb?.name ?? "Workspace"} / Session 1`,
         };
         setWorkspaceSessions((previous) => [fallback, ...previous]);
         setActiveSessionId(fallback.id);
         switchAgentSession(activeKbId, fallback.id, true);
       }
 
-      logDiagnostic(`已删除会话：${target.title}`);
+      logDiagnostic(`Deleted session: ${target.title}`);
     } catch (error) {
-      logDiagnostic(`删除会话失败：${String(error)}`);
+      logDiagnostic(`Failed to delete session: ${String(error)}`);
     }
   };
 
   const handleUpload = async () => {
     if (!activeKbId) {
-      logDiagnostic("请先创建或选择一个知识库。");
+      logDiagnostic("Please create or select a knowledge base first.");
       return;
     }
     const selected = await open({
@@ -442,27 +448,30 @@ export function App() {
     try {
       const document = await uploadPdf(activeKbId, selected);
       await refreshDocuments(activeKbId);
-      logDiagnostic(`MinerU 解析完成：${document.file_name} (${document.status})`);
+      logDiagnostic(`MinerU parse finished: ${document.file_name} (${document.status})`);
     } catch (error) {
       setDocumentsByKb((previous) => ({
         ...previous,
         [activeKbId]: (previous[activeKbId] ?? []).filter((document) => document.id !== optimisticDocument.id),
       }));
-      logDiagnostic(`上传失败：${String(error)}`);
+      logDiagnostic(`Upload failed: ${String(error)}`);
     } finally {
       setIsUploading(false);
     }
   };
 
   const handleDeleteDocument = async (documentId: string) => {
-    const confirmed = await confirm("确认删除这份文档及其解析结果？", { title: "删除文档", kind: "warning" });
+    const confirmed = await confirm("Confirm deleting this document and its parsed outputs?", {
+      title: "Delete Document",
+      kind: "warning",
+    });
     if (!confirmed) return;
     try {
       await deleteDocument(documentId);
       if (activeKbId) await refreshDocuments(activeKbId);
-      logDiagnostic(`已删除文档 ${documentId}`);
+      logDiagnostic(`Deleted document: ${documentId}`);
     } catch (error) {
-      logDiagnostic(`删除文档失败：${String(error)}`);
+      logDiagnostic(`Failed to delete document: ${String(error)}`);
     }
   };
 
@@ -477,16 +486,16 @@ export function App() {
       }));
       const nextDocument = await retryDocumentParse(documentId);
       await refreshDocuments(activeKbId);
-      logDiagnostic(`重试解析完成：${nextDocument.file_name} (${nextDocument.status})`);
+      logDiagnostic(`Retry parse finished: ${nextDocument.file_name} (${nextDocument.status})`);
     } catch (error) {
       await refreshDocuments(activeKbId);
-      logDiagnostic(`重试解析失败：${String(error)}`);
+      logDiagnostic(`Retry parse failed: ${String(error)}`);
     }
   };
 
   const handleDeleteKnowledgeBase = async (kbId: string, kbName: string) => {
-    const confirmed = await confirm(`确认删除知识库「${kbName}」及其全部文档和会话？`, {
-      title: "删除知识库",
+    const confirmed = await confirm(`Confirm deleting knowledge base "${kbName}" and all its documents/sessions?`, {
+      title: "Delete Knowledge Base",
       kind: "warning",
     });
     if (!confirmed) return;
@@ -504,9 +513,9 @@ export function App() {
         setActiveSessionId(null);
         setView("dashboard");
       }
-      logDiagnostic(`已删除知识库：${kbName}`);
+      logDiagnostic(`Deleted knowledge base: ${kbName}`);
     } catch (error) {
-      logDiagnostic(`删除知识库失败：${String(error)}`);
+      logDiagnostic(`Failed to delete knowledge base: ${String(error)}`);
     }
   };
 
@@ -527,6 +536,14 @@ export function App() {
         packy_api_key: settings.packy_api_key.trim(),
         packy_api_base_url: settings.packy_api_base_url.trim() || DEFAULT_SETTINGS.packy_api_base_url,
         packy_model_id: settings.packy_model_id.trim() || DEFAULT_SETTINGS.packy_model_id,
+        semantic_search_enabled: settings.semantic_search_enabled,
+        embedding_mode: settings.embedding_mode.trim() === "api" ? "api" : "",
+        embedding_api_key: settings.embedding_api_key.trim(),
+        embedding_api_base_url:
+          settings.embedding_api_base_url.trim() || DEFAULT_SETTINGS.embedding_api_base_url,
+        embedding_model_id: settings.embedding_model_id.trim() || DEFAULT_SETTINGS.embedding_model_id,
+        embedding_local_model_id:
+          settings.embedding_local_model_id.trim() || DEFAULT_SETTINGS.embedding_local_model_id,
         mineru_api_token: settings.mineru_api_token.trim(),
         storage_dir: settings.storage_dir.trim(),
         python_runtime_path: settings.python_runtime_path.trim(),
@@ -546,11 +563,11 @@ export function App() {
       setAgentBootNonce((value) => value + 1);
       await refreshHealth();
       if (nextSettings.storage_dir && nextSettings.storage_dir !== previousStoragePath) {
-        logDiagnostic("存储目录已保存，重启应用后生效。");
+        logDiagnostic("Storage directory saved. Restart the app to apply.");
       }
-      logDiagnostic("模型设置已保存。");
+      logDiagnostic("Settings saved.");
     } catch (error) {
-      logDiagnostic(`保存设置失败：${String(error)}`);
+      logDiagnostic(`Failed to save settings: ${String(error)}`);
     } finally {
       setIsSavingSettings(false);
     }
@@ -585,7 +602,7 @@ export function App() {
             isUploading={isUploading}
             activeDocuments={activeDocuments}
             activePreviewDocId={activePreviewDocId}
-            activePreviewDocName={activePreviewDoc?.file_name ?? "未选择文档"}
+            activePreviewDocName={activePreviewDoc?.file_name ?? "No document selected"}
             activePreviewMarkdown={activePreviewMarkdown}
             activePreviewSourcePath={activePreviewDoc?.source_path}
             previewLoading={previewLoading}

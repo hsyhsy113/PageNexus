@@ -19,7 +19,12 @@ const readPagesSchema = Type.Object({
   endPage: Type.Number({ description: "结束页码，从 1 开始" })
 });
 
-export function createKnowledgeBaseTools(getKbId: () => string | null): AgentTool[] {
+type ListDocumentsTool = AgentTool<typeof listDocumentsSchema, { count: number }>;
+type SearchTextTool = AgentTool<typeof searchTextSchema, { count: number }>;
+type ReadPagesTool = AgentTool<typeof readPagesSchema, { pageCount: number; continuation: number | null }>;
+type KnowledgeBaseTool = ListDocumentsTool | SearchTextTool | ReadPagesTool;
+
+export function createKnowledgeBaseTools(getKbId: () => string | null): KnowledgeBaseTool[] {
   const resolveKbId = (provided?: string) => {
     const kbId = provided || getKbId();
     if (!kbId) {
@@ -28,7 +33,7 @@ export function createKnowledgeBaseTools(getKbId: () => string | null): AgentToo
     return kbId;
   };
 
-  const listTool: AgentTool<typeof listDocumentsSchema, { count: number }> = {
+  const listTool: ListDocumentsTool = {
     label: "List Documents",
     name: "kb_list_documents",
     description: "列出当前知识库中的文档和解析状态。先用它了解文档范围。",
@@ -52,7 +57,7 @@ export function createKnowledgeBaseTools(getKbId: () => string | null): AgentToo
     }
   };
 
-  const searchTool: AgentTool<typeof searchTextSchema, { count: number }> = {
+  const searchTool: SearchTextTool = {
     label: "Search Knowledge Base",
     name: "kb_search_text",
     description: "在当前知识库的页级文本中全文检索，返回文档名、页码和片段。必须先搜再读。",
@@ -76,7 +81,7 @@ export function createKnowledgeBaseTools(getKbId: () => string | null): AgentToo
     }
   };
 
-  const readTool: AgentTool<typeof readPagesSchema, { pageCount: number; continuation: number | null }> = {
+  const readTool: ReadPagesTool = {
     label: "Read Pages",
     name: "kb_read_pages",
     description: "读取知识库文档的指定页段正文。只读必要页段，不要一次读取整份文档。",

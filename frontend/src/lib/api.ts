@@ -31,6 +31,10 @@ export async function retryDocumentParse(docId: string): Promise<DocumentRecord>
   return invoke("retry_document_parse", { docId });
 }
 
+export async function cancelDocumentParse(docId: string): Promise<DocumentRecord> {
+  return invoke("cancel_document_parse", { docId });
+}
+
 export async function listDocuments(kbId: string): Promise<DocumentRecord[]> {
   return invoke("list_documents", { kbId });
 }

@@ -9,13 +9,25 @@ type BridgeState = {
   isStreaming: boolean;
 };
 
+type TextBlock = { type: "text"; text: string };
+
+function isTextBlock(block: unknown): block is TextBlock {
+  return (
+    typeof block === "object" &&
+    block !== null &&
+    "type" in block &&
+    "text" in block &&
+    (block as { type?: unknown }).type === "text" &&
+    typeof (block as { text?: unknown }).text === "string"
+  );
+}
+
 function userText(message: AgentMessage): string {
   if (message.role === "user") {
     if (typeof message.content === "string") return message.content;
     if (Array.isArray(message.content)) {
       return message.content
-        .filter((block): block is { type: string; text?: string } => typeof block === "object" && block !== null)
-        .filter((block) => block.type === "text" && typeof block.text === "string")
+        .filter(isTextBlock)
         .map((block) => block.text)
         .join("\n")
         .trim();
@@ -26,8 +38,7 @@ function userText(message: AgentMessage): string {
     if (typeof message.content === "string") return message.content.trim();
     if (Array.isArray(message.content)) {
       return message.content
-        .filter((block): block is { type: string; text?: string } => typeof block === "object" && block !== null)
-        .filter((block) => block.type === "text" && typeof block.text === "string")
+        .filter(isTextBlock)
         .map((block) => block.text)
         .join("\n")
         .trim();
